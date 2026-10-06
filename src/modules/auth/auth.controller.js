@@ -2,17 +2,41 @@ const User = require("./user.model");
 const OTP = require("./otp.model");
 const generateToken = require("../../utils/generateToken");
 const sendOTP = require("../../utils/sendOTP");
+const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
+
+const FRANCHISE_PROFILE_FIELDS = [
+  "franchiseStatus",
+  "franchiseId",
+  "panNumber",
+  "state",
+  "city",
+  "pincode",
+  "package",
+  "businessDetails",
+  "franchiseAppliedAt",
+  "franchiseApprovedAt",
+  "franchiseRejectedAt",
+];
 
 /*
 ==========================================
 Register User & Send OTP
 POST /api/auth/register
+
+ONE endpoint for both account types. The body carries `role`
+("Customer" | "Franchise") plus the registration fields:
+
+  { role, continent, country, name, mobile, email }
+
+The role + location are stored on the account so the JWT (minted after OTP)
+already knows who the caller is. A second family of fields (PAN, state, city,
+package, ...) is collected later from the franchise application form.
 ==========================================
 */
 
 exports.register = async (req, res, next) => {
   try {
-    const { name, mobile, email } = req.body;
+    const { name, mobile, email, role, continent, country } = req.body;
 
     if (!name || !mobile || !email) {
       return res.status(400).json({
@@ -20,6 +44,8 @@ exports.register = async (req, res, next) => {
         message: "All fields are required",
       });
     }
+
+    const accountRole = role || USER_ROLE.CUSTOMER;
 
     const user = await User.findOne({ mobile });
 
@@ -42,14 +68,25 @@ exports.register = async (req, res, next) => {
       expiresAt: new Date(Date.now() + (process.env.OTP_EXPIRE_MINUTES || 5) * 60 * 1000),
     });
 
-    // Create or reuse temporary user record
+    // Create or reuse the (still unverified) account.
     if (!user) {
       await User.create({
         name,
         mobile,
         email,
+        role: accountRole,
+        continent: continent || "",
+        country: country || "",
         isVerified: false,
       });
+    } else {
+      // Re-registration before OTP: refresh the details the applicant just typed.
+      user.name = name;
+      user.email = email;
+      user.role = accountRole;
+      if (continent !== undefined) user.continent = continent;
+      if (country !== undefined) user.country = country;
+      await user.save();
     }
 
     const otpSent = await sendOTP(mobile, otp);
@@ -73,6 +110,10 @@ exports.register = async (req, res, next) => {
 ==========================================
 Verify OTP
 POST /api/auth/verify-otp
+
+Verifying the mobile both marks the account verified AND returns the JWT.
+The token carries { id, mobile, role, franchiseId }, so every later endpoint
+identifies the caller without trusting client-sent name/mobile.
 ==========================================
 */
 
@@ -118,6 +159,12 @@ exports.verifyOTP = async (req, res, next) => {
       message: "Mobile Verified Successfully",
       token,
       user,
+      // Tells the frontend where to route next:
+      //   Customer            -> customer dashboard
+      //   Franchise (None)    -> franchise application form
+      //   Franchise (Pending) -> waiting-for-approval screen
+      //   Franchise (Approved)-> franchise dashboard
+      nextStep: nextStepFor(user),
     });
   } catch (error) {
     next(error);
@@ -214,8 +261,6 @@ exports.verifyLoginOTP = async (req, res, next) => {
 
     const user = await User.findOne({ mobile });
 
-    user.lastLogin = new Date();
-
     user.isVerified = true;
     user.lastLogin = new Date();
 
@@ -229,6 +274,7 @@ exports.verifyLoginOTP = async (req, res, next) => {
       success: true,
       token,
       user,
+      nextStep: nextStepFor(user),
     });
   } catch (error) {
     next(error);
@@ -253,4 +299,48 @@ exports.profile = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+exports.customerProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    const customer = user ? user.toObject() : null;
+
+    if (customer) {
+      FRANCHISE_PROFILE_FIELDS.forEach((field) => delete customer[field]);
+      if (customer.role === USER_ROLE.LEGACY_CUSTOMER) {
+        customer.role = USER_ROLE.CUSTOMER;
+      }
+    }
+
+    res.json({
+      success: true,
+      user: customer,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.franchiseProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    res.json({
+      success: true,
+      user: user ? user.toObject() : null,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* Routes the client should open next, based on role + franchise status. */
+const nextStepFor = (user) => {
+  if (user.role !== USER_ROLE.FRANCHISE) return "customer-dashboard";
+
+  if (user.franchiseStatus === FRANCHISE_STATUS.APPROVED) return "franchise-dashboard";
+  if (user.franchiseStatus === FRANCHISE_STATUS.PENDING) return "franchise-pending";
+  if (user.franchiseStatus === FRANCHISE_STATUS.REJECTED) return "franchise-rejected";
+  return "franchise-apply";
 };

@@ -2,6 +2,10 @@ const router = require("express").Router();
 
 const authController = require("./auth.controller");
 const auth = require("../../middleware/auth.middleware");
+const {
+  requireCustomer,
+  requireFranchise,
+} = require("../../middleware/franchise.middleware");
 const { otpRequestLimiter, otpVerifyLimiter } = require("../../middleware/rateLimit.middleware");
 const {
   registerValidator,
@@ -34,7 +38,11 @@ Protected Routes
 ========================================
 */
 
-// User Profile
+// Role-specific profiles
+router.get("/customer/profile", auth, requireCustomer, authController.customerProfile);
+router.get("/franchise/profile", auth, requireFranchise, authController.franchiseProfile);
+
+// Backward-compatible profile route
 router.get("/profile", auth, authController.profile);
 
 module.exports = router;
