@@ -1,5 +1,6 @@
 const franchiseService = require("./franchise.service");
 const { FRANCHISE_STATUS } = require("../../constants/roles");
+const { sanitizeFranchiseProfile } = require("./franchiseProfile");
 
 /*
 ==========================================
@@ -36,7 +37,7 @@ exports.profile = async (req, res, next) => {
   try {
     res.json({
       success: true,
-      franchise: req.franchise ? req.franchise.toObject() : null,
+      franchise: sanitizeFranchiseProfile(req.franchise),
       franchiseStatus: req.franchise?.franchiseStatus || null,
     });
   } catch (error) {

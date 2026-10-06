@@ -3,20 +3,10 @@ const OTP = require("./otp.model");
 const generateToken = require("../../utils/generateToken");
 const sendOTP = require("../../utils/sendOTP");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
-
-const FRANCHISE_PROFILE_FIELDS = [
-  "franchiseStatus",
-  "franchiseId",
-  "panNumber",
-  "state",
-  "city",
-  "pincode",
-  "package",
-  "businessDetails",
-  "franchiseAppliedAt",
-  "franchiseApprovedAt",
-  "franchiseRejectedAt",
-];
+const {
+  FRANCHISE_PROFILE_FIELDS,
+  sanitizeFranchiseProfile,
+} = require("../franchise/franchiseProfile");
 
 const authUserResponse = (user) => ({
   _id: user._id,
@@ -350,7 +340,7 @@ exports.franchiseProfile = async (req, res, next) => {
 
     res.json({
       success: true,
-      user: user ? user.toObject() : null,
+      user: sanitizeFranchiseProfile(user),
     });
   } catch (error) {
     next(error);
