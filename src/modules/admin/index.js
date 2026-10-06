@@ -26,4 +26,6 @@ router.use("/masters", adminAuth, require("./master.routes"));
 
 router.use("/customers", adminAuth, require("./customer.routes"));
 
+router.use("/franchises", adminAuth, require("./franchise.routes"));
+
 module.exports = router;
