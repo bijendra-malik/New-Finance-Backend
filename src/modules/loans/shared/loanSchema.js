@@ -6,6 +6,7 @@ const {
   SERVER_MANAGED_FIELD_NAMES,
   ADMIN_REVIEW_FIELDS,
   ADMIN_REVIEW_FIELD_NAMES,
+  FRANCHISE_FIELDS,
 } = require("./loanBasics.schema");
 const {
   personalDetailsFields,
@@ -186,6 +187,10 @@ const buildLoanSchema = (productKey) => {
       ...incomeSections[config.income],
       ...existingLoanExposureFields,
       ...personalDetails,
+
+      // Channel linkage — null for a direct customer application, set when an
+      // approved franchise submits on the customer's behalf.
+      ...FRANCHISE_FIELDS,
 
       status: {
         type: String,

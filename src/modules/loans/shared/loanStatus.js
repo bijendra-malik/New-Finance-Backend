@@ -37,6 +37,32 @@ const canTransition = (from, to) => {
   return Array.isArray(allowed) && allowed.includes(to);
 };
 
+/*
+==========================================
+Applicant-facing status view.
+
+Admins speak in raw statuses (Submitted / Pending / Approved / Rejected); the
+customer dashboard wants a friendly "where is my application" stage. Both come
+from the same status string, so this mapping lives next to the status rules.
+==========================================
+*/
+const STATUS_STAGES = {
+  Submitted: { stage: "Application Submitted", stageKey: "submitted", step: 1 },
+  Pending: { stage: "Under Review", stageKey: "under_review", step: 2 },
+  Approved: { stage: "Approved", stageKey: "approved", step: 3 },
+  Rejected: { stage: "Rejected", stageKey: "rejected", step: 3 },
+};
+
+/** Raw status -> friendly stage (unknown/legacy values fall back to Submitted). */
+const describeLoanStatus = (status) => STATUS_STAGES[String(status)] || STATUS_STAGES.Submitted;
+
+/** Ordered step labels a progress bar can render. */
+const STATUS_STEP_LABELS = [
+  STATUS_STAGES.Submitted.stage,
+  STATUS_STAGES.Pending.stage,
+  STATUS_STAGES.Approved.stage,
+];
+
 module.exports = {
   OPEN_STATUSES,
   TERMINAL_STATUSES,
@@ -44,6 +70,10 @@ module.exports = {
   SETTABLE_STATUSES,
   ALLOWED_TRANSITIONS,
   canTransition,
+
+  STATUS_STAGES,
+  STATUS_STEP_LABELS,
+  describeLoanStatus,
 
   // Re-exported so admin modules can pull statuses + models from ONE place.
   MODELS,
