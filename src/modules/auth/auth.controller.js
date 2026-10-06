@@ -18,6 +18,21 @@ const FRANCHISE_PROFILE_FIELDS = [
   "franchiseRejectedAt",
 ];
 
+const authUserResponse = (user) => ({
+  _id: user._id,
+  name: user.name,
+  mobile: user.mobile,
+  email: user.email,
+  isVerified: user.isVerified,
+  role: user.role,
+  continent: user.continent,
+  country: user.country,
+  isActive: user.isActive,
+  lastLogin: user.lastLogin,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+});
+
 /*
 ==========================================
 Register User & Send OTP
@@ -158,7 +173,7 @@ exports.verifyOTP = async (req, res, next) => {
       success: true,
       message: "Mobile Verified Successfully",
       token,
-      user,
+      user: authUserResponse(user),
       // Tells the frontend where to route next:
       //   Customer            -> customer dashboard
       //   Franchise (None)    -> franchise application form
@@ -252,6 +267,13 @@ exports.verifyLoginOTP = async (req, res, next) => {
       });
     }
 
+    if (otpData.expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP Expired",
+      });
+    }
+
     if (otpData.otp !== otp) {
       return res.status(400).json({
         success: false,
@@ -273,7 +295,7 @@ exports.verifyLoginOTP = async (req, res, next) => {
     res.json({
       success: true,
       token,
-      user,
+      user: authUserResponse(user),
       nextStep: nextStepFor(user),
     });
   } catch (error) {
