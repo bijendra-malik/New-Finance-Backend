@@ -10,7 +10,7 @@ module.exports = {
         req.body.collateralPropertyCityId = req.fdpLocation.cityId;
         req.body.collateralPropertyPincode = req.fdpLocation.pincode;
       }
-      loanAgainstPropertyService.apply(req, res, next);
+      return loanAgainstPropertyService.apply(req, res, next);
     } catch (error) {
       next(error);
     }

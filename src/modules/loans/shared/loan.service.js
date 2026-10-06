@@ -1,5 +1,7 @@
 const { LOAN_PRODUCTS } = require("./loanProducts");
 const { MODELS } = require("./loanModels");
+const { USER_ROLE } = require("../../../constants/roles");
+const { nextLoanApplicationNo } = require("../../../utils/sequence");
 const {
   LOAN_FIELD_NAMES,
   EXPOSURE_FIELD_NAMES,
@@ -149,12 +151,21 @@ const normalizeMultiValueFields = (data, config) => {
  * Request body -> document ready for Model.create().
  * Server-owned values always come from the auth token / product, never the body.
  */
-const buildLoanDocument = (productKey, body, userId) => {
+const buildLoanDocument = (productKey, body, userId, options = {}) => {
   const config = LOAN_PRODUCTS[productKey];
   const source = unwrap(body);
   const employmentType = employmentTypeFor(config, source);
 
   const data = { user: userId, loanType: config.loanType };
+
+  /*
+  Channel + identity fields are SERVER-owned: a direct customer application
+  has franchise = null, while a franchise-submitted one carries the franchise
+  account id + its FRN code. `applicationNo` is minted by the caller.
+  */
+  if (options.franchise) data.franchise = options.franchise;
+  if (options.franchiseCode) data.franchiseCode = options.franchiseCode;
+  if (options.applicationNo) data.applicationNo = options.applicationNo;
 
   dataFieldNames(config, employmentType).forEach((field) => {
     if (source[field] !== undefined) data[field] = source[field];
@@ -234,7 +245,19 @@ const createLoanController = (productKey) => {
   return {
     apply: async (req, res, next) => {
       try {
-        const application = await Model.create(buildLoanDocument(productKey, req.body, req.user.id));
+        // Customer product routes are for customer tokens only; a franchise
+        // must use POST /api/franchise/loan-apply so the channel is recorded.
+        if (req.user && req.user.role === USER_ROLE.FRANCHISE) {
+          return res.status(403).json({
+            success: false,
+            message: "Franchise accounts must apply through POST /api/franchise/loan-apply",
+          });
+        }
+
+        const applicationNo = await nextLoanApplicationNo();
+        const application = await Model.create(
+          buildLoanDocument(productKey, req.body, req.user.id, { applicationNo })
+        );
         res.status(201).json({ success: true, data: sanitizeLoanResponse(productKey, application) });
       } catch (error) {
         if (error.name === "ValidationError") {
