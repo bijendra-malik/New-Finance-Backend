@@ -1,6 +1,7 @@
 const User = require("../auth/user.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const mongoose = require("mongoose");
+const { USER_ROLE } = require("../../constants/roles");
 
 /*
 ==========================================
@@ -28,7 +29,9 @@ const conflict = (message) => {
 };
 
 const listCustomers = async ({ search, page, limit, isActive } = {}) => {
-  const filter = {};
+  // Franchise accounts live in the same collection but are managed on the
+  // /api/admin/franchises endpoints, so they never show up as customers here.
+  const filter = { role: { $ne: USER_ROLE.FRANCHISE } };
 
   const q = String(search ?? "").trim();
   if (q) {
