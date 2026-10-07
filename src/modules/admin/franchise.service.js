@@ -21,7 +21,8 @@ Admin franchise endpoints.
   listFranchiseLoans  GET    /api/admin/franchises/:id/loans
 
 Approving mints the FRN code AND sets the initial password (the franchise's
-PAN, hashed) so the partner can log in with franchiseId + password.
+registered mobile number, hashed) so the partner can log in with
+franchiseId + mobile number as the password.
 ==========================================
 */
 
@@ -44,6 +45,28 @@ const conflict = (message) => {
 };
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/*
+The login details the admin hands to the franchise partner.
+
+Approving mints the FRN code and stores a bcrypt hash of the franchise's
+registered mobile number; that mobile is the first password. This block is
+therefore built from the two public fields the admin already sees — never from
+the stored hash. Returns null while the application is Pending/Rejected.
+*/
+const buildCredentials = (franchise) => {
+  if (!franchise) return null;
+
+  const loginId = franchise.franchiseId || null;
+  if (!loginId) return null;
+
+  return {
+    loginId,
+    password: franchise.mobile || null,
+    passwordIsMobile: true,
+    note: "Share these with the franchise partner. The password is the registered mobile number.",
+  };
+};
 
 /* The PAN password hash is server-side only — never echo it back in a response. */
 const withoutPassword = (franchise) => {
@@ -102,12 +125,13 @@ const approveFranchise = async (id) => {
   }
 
   if (!franchise.panNumber) {
-    throw badRequest("PAN is missing on this application — the franchise must complete its application first");
+    throw badRequest("This application is incomplete — the franchise must submit its details first");
   }
 
-  // Mint the public FRN code and set the initial password (PAN, hashed).
+  // Mint the public FRN code and set the initial password: the registered
+  // mobile number, hashed. The partner logs in with FRN + phone number.
   franchise.franchiseId = await nextFranchiseCode();
-  franchise.password = await bcrypt.hash(franchise.panNumber, 10);
+  franchise.password = await bcrypt.hash(String(franchise.mobile), 10);
   franchise.franchiseStatus = FRANCHISE_STATUS.APPROVED;
   franchise.franchiseApprovedAt = new Date();
   franchise.franchiseRejectedAt = null;
@@ -136,6 +160,35 @@ const rejectFranchise = async (id, note) => {
   await franchise.save();
 
   return withoutPassword(franchise);
+};
+
+/*
+Re-issue the login password for an already-approved franchise.
+
+Franchises approved before the mobile-password rule have the PAN hashed as
+their password, so their phone number does not work. This rebuilds the hash
+from the registered mobile while keeping the FRN code and approval intact.
+*/
+const resetFranchisePassword = async (id) => {
+  const franchise = await getFranchiseById(id);
+
+  if (franchise.franchiseStatus !== FRANCHISE_STATUS.APPROVED) {
+    throw badRequest("Only an approved franchise has login credentials to reset");
+  }
+
+  franchise.password = await bcrypt.hash(String(franchise.mobile), 10);
+  await franchise.save();
+
+  return withoutPassword(franchise);
+};
+
+/** How many applications were filed through this franchise, across all products. */
+const countFranchiseLoans = async (franchiseObjectId) => {
+  const counts = await Promise.all(
+    Object.values(MODELS).map((Model) => Model.countDocuments({ franchise: franchiseObjectId }))
+  );
+
+  return counts.reduce((sum, count) => sum + count, 0);
 };
 
 /** All applications filed through this franchise, grouped per product. */
@@ -174,5 +227,8 @@ module.exports = {
   getFranchiseById,
   approveFranchise,
   rejectFranchise,
+  resetFranchisePassword,
+  countFranchiseLoans,
   listFranchiseLoans,
+  buildCredentials,
 };

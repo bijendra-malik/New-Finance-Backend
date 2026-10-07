@@ -103,9 +103,9 @@ const applyFranchise = async (userId, body = {}) => {
 /* ---------------------------------------------------------------- login -- */
 
 /*
-Franchise login is deliberate: FRN code + password (initially the PAN, hashed
-by the admin on approval). Returns the same JWT shape as the customer login so
-the rest of the API is unchanged.
+Franchise login is deliberate: FRN code + password (initially the registered
+mobile number, hashed by the admin on approval). Returns the same JWT shape as
+the customer login so the rest of the API is unchanged.
 */
 const loginFranchise = async (franchiseId, password) => {
   const code = cleanText(franchiseId).toUpperCase();
