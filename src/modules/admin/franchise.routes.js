@@ -9,8 +9,9 @@ Admin franchise routes — mounted at /api/admin/franchises
 
   GET    /                 list applications (?status=&search=&page=&limit=)
   GET    /:id              one application
-  PATCH  /:id/approve      approve + mint FRN code + PAN password
+  PATCH  /:id/approve      approve + mint FRN code + mobile password
   PATCH  /:id/reject       reject                 { note? }
+  PATCH  /:id/reset-password  re-hash the password from the registered mobile
   GET    /:id/loans        loans submitted through this FRN
 ==========================================
 */
@@ -19,6 +20,7 @@ router.get("/", franchiseController.list);
 router.get("/:id", franchiseController.getOne);
 router.patch("/:id/approve", franchiseController.approve);
 router.patch("/:id/reject", franchiseController.reject);
+router.patch("/:id/reset-password", franchiseController.resetPassword);
 router.get("/:id/loans", franchiseController.loans);
 
 module.exports = router;

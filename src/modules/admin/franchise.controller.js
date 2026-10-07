@@ -29,7 +29,17 @@ GET /api/admin/franchises/:id
 exports.getOne = async (req, res, next) => {
   try {
     const franchise = await franchiseService.getFranchiseById(req.params.id);
-    res.json({ success: true, franchise });
+    // How many loans this franchise has filed — a single call for the admin.
+    const loanCount = await franchiseService.countFranchiseLoans(franchise._id);
+
+    res.json({
+      success: true,
+      // Login ID + first password (the registered mobile) so the admin can re-share them later.
+      // null until the application has been approved.
+      credentials: franchiseService.buildCredentials(franchise),
+      loanCount,
+      franchise,
+    });
   } catch (error) {
     next(error);
   }
@@ -46,6 +56,8 @@ exports.approve = async (req, res, next) => {
     res.json({
       success: true,
       message: `Franchise approved. Login ID: ${franchise.franchiseId}`,
+      // Exactly what the admin has to pass on to the franchise partner.
+      credentials: franchiseService.buildCredentials(franchise),
       franchise,
     });
   } catch (error) {
@@ -65,6 +77,26 @@ exports.reject = async (req, res, next) => {
     res.json({
       success: true,
       message: "Franchise application rejected",
+      franchise,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Reset the login password of an approved franchise to its registered mobile
+(the current rule). Keeps the FRN code and approval status unchanged.
+PATCH /api/admin/franchises/:id/reset-password
+*/
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const franchise = await franchiseService.resetFranchisePassword(req.params.id);
+
+    res.json({
+      success: true,
+      message: `Credentials reset. Login ID: ${franchise.franchiseId}`,
+      credentials: franchiseService.buildCredentials(franchise),
       franchise,
     });
   } catch (error) {

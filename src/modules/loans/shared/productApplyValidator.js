@@ -46,4 +46,54 @@ const buildProductApplyValidator = () => (req, res, next) => {
   return runChain(chain)(req, res, next);
 };
 
-module.exports = { buildProductApplyValidator, productValidators };
+/*
+Maps a URL segment onto a LOAN_PRODUCTS key, so a product can also be named in
+the path instead of the body:
+
+  /loan-apply/personal          /loan-apply/personalloan
+  /loan-apply/personal-loan     /loan-apply/gold-loan
+  /loan-apply/loan-against-property  /loan-apply/credit-card
+
+every one of those resolves to its config key ("personal", "goldLoan",
+"lap", "creditCard", ...). Keys, keys + "loan", and the product's human
+loanType are all accepted.
+*/
+const normalizeSegment = (value) => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const PRODUCT_ALIASES = (() => {
+  const map = new Map();
+
+  Object.entries(LOAN_PRODUCTS).forEach(([key, config]) => {
+    [normalizeSegment(key), normalizeSegment(config.loanType)].forEach((base) => {
+      if (!base) return;
+      map.set(base, key);
+      map.set(`${base}loan`, key);
+      map.set(`${base}loans`, key);
+    });
+  });
+
+  return map;
+})();
+
+const productKeyFromParam = (raw) => PRODUCT_ALIASES.get(normalizeSegment(raw)) || null;
+
+/** Express middleware: pins the product taken from `:product` onto the body. */
+const productFromParam = (req, res, next) => {
+  const key = productKeyFromParam(req.params.product);
+
+  if (!key) {
+    return res.status(400).json({ success: false, message: productListMessage() });
+  }
+
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) req.body = {};
+  req.body.product = key;
+
+  return next();
+};
+
+module.exports = {
+  buildProductApplyValidator,
+  productValidators,
+  productKeyFromParam,
+  productFromParam,
+};
