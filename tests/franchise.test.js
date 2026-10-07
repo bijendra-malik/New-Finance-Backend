@@ -9,6 +9,8 @@ const {
   loadFranchise,
 } = require("../src/middleware/franchise.middleware");
 const { formatId } = require("../src/utils/sequence");
+const { productKeyFromParam } = require("../src/modules/loans/shared/productApplyValidator");
+const adminFranchiseService = require("../src/modules/admin/franchise.service");
 const { buildLoanDocument } = require("../src/modules/loans/shared/loan.service");
 const { USER_ROLE } = require("../src/constants/roles");
 
@@ -89,7 +91,7 @@ describe("franchise validators", () => {
   it("login requires franchiseId + password", async () => {
     expect((await runChain(franchiseLoginValidator, { franchiseId: "FRN000125" })).passed).toBe(false);
     expect(
-      (await runChain(franchiseLoginValidator, { franchiseId: "FRN000125", password: "ABCDE1234F" })).passed
+      (await runChain(franchiseLoginValidator, { franchiseId: "FRN000125", password: "9876543210" })).passed
     ).toBe(true);
   });
 
@@ -163,10 +165,54 @@ describe("franchise middleware role guards", () => {
   });
 });
 
+describe("productKeyFromParam (product in the URL path)", () => {
+  it("accepts the config key, the key + loan, and the kebab-case form", () => {
+    expect(productKeyFromParam("personal")).toBe("personal");
+    expect(productKeyFromParam("personalloan")).toBe("personal");
+    expect(productKeyFromParam("personal-loan")).toBe("personal");
+    expect(productKeyFromParam("businessloan")).toBe("business");
+    expect(productKeyFromParam("gold-loan")).toBe("goldLoan");
+    expect(productKeyFromParam("credit-card")).toBe("creditCard");
+  });
+
+  it("accepts the human loanType, so long names work too", () => {
+    expect(productKeyFromParam("loan-against-property")).toBe("lap");
+    expect(productKeyFromParam("od-cc-limit")).toBe("odCcLimit");
+    expect(productKeyFromParam("working-capital")).toBe("workingCapital");
+    expect(productKeyFromParam("lease-rental-discounting")).toBe("leaseRentalDiscounting");
+  });
+
+  it("returns null for an unknown product", () => {
+    expect(productKeyFromParam("wrongproduct")).toBeNull();
+    expect(productKeyFromParam("")).toBeNull();
+  });
+});
+
 describe("utils/sequence", () => {
   it("pads ids to the fixed width", () => {
     expect(formatId("FRN", 125)).toBe("FRN000125");
     expect(formatId("LOAN", 1)).toBe("LOAN000001");
+  });
+});
+
+describe("admin franchise credentials", () => {
+  it("exposes the FRN login id + mobile password once approved", () => {
+    const credentials = adminFranchiseService.buildCredentials({
+      franchiseId: "FRN000001",
+      mobile: "9876543210",
+      panNumber: "ABCDE1234F",
+      franchiseStatus: "Approved",
+    });
+
+    expect(credentials.loginId).toBe("FRN000001");
+    expect(credentials.password).toBe("9876543210");
+    expect(credentials.passwordIsMobile).toBe(true);
+  });
+
+  it("returns null until an FRN has been minted", () => {
+    // Pending / Rejected applications have no franchiseId yet.
+    expect(adminFranchiseService.buildCredentials({ mobile: "9876543210" })).toBeNull();
+    expect(adminFranchiseService.buildCredentials(null)).toBeNull();
   });
 });
 
