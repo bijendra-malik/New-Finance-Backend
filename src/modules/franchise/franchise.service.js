@@ -2,6 +2,9 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const User = require("../auth/user.model");
+const Franchise = require("./franchise.model");
+const FranchiseCustomer = require("./franchiseCustomer.model");
+const { buildEligibility, lockedError } = require("./cibil/cibil.service");
 const generateToken = require("../../utils/generateToken");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS } = require("../loans/shared/loanModels");
@@ -17,8 +20,10 @@ A franchise account is created through the SAME /api/auth/register endpoint as
 a customer (role = "Franchise"). Everything franchise-specific happens here:
 
   1. applyFranchise()      -> profile details, franchiseStatus = Pending
-  2. loginFranchise()      -> FRN code + PAN password -> JWT
-  3. createFranchiseLoan() -> approved franchise applies on behalf of a customer
+  2. loginFranchise()      -> FRN code + password -> JWT
+  3. createFranchiseLoan() -> approved franchise applies for its OWN customer,
+                             aur sirf tab jab uska CIBIL check pass ho
+                             (customer + CIBIL ka kaam franchiseCustomer.service.js me hai)
   4. listFranchiseLoans()  -> all loans submitted through this FRN, grouped
 
 The admin actions (approve / reject, which mint the FRN code) live in
@@ -57,7 +62,7 @@ const cleanText = (value) => String(value ?? "").trim();
 const applyFranchise = async (userId, body = {}) => {
   const payload = unwrap(body);
 
-  const franchise = await User.findById(userId);
+  const franchise = await Franchise.findById(userId);
   if (!franchise) throw notFound("Franchise account not found");
 
   if (franchise.franchiseStatus === FRANCHISE_STATUS.APPROVED) {
@@ -112,7 +117,7 @@ const loginFranchise = async (franchiseId, password) => {
   if (!code) throw badRequest("Franchise ID is required");
   if (!password) throw badRequest("Password is required");
 
-  const franchise = await User.findOne({ franchiseId: code }).select("+password");
+  const franchise = await Franchise.findOne({ franchiseId: code }).select("+password");
 
   if (!franchise) throw unauthorized("Invalid franchise ID or password");
   if (franchise.role !== USER_ROLE.FRANCHISE) throw unauthorized("Invalid franchise ID or password");
@@ -140,28 +145,61 @@ const loginFranchise = async (franchiseId, password) => {
 /* ------------------------------------------------------- loan application -- */
 
 /**
- * Resolve the customer an application belongs to.
+ * Franchise ka apna customer (franchisecustomers collection) — franchise-scoped.
  *
- *  - `customerId` (an already-registered customer) is used as-is.
- *  - otherwise the customer is matched by mobile; a walk-in customer with a
- *    brand-new mobile gets a lightweight Customer account so `user` (and the
- *    "kitne loans apply kiye" report) always has an owner.
+ * Loan apply ka pehla requirement yahi doc hai: iske bina (aur iska CIBIL check
+ * pass hone se pehle) loan form LOCKED rehta hai.
  */
-const resolveCustomer = async (payload) => {
-  const rawId = cleanText(payload.customerId);
+const loadFranchiseCustomer = async (franchise, rawId) => {
+  const id = cleanText(rawId);
 
-  if (rawId) {
-    if (!mongoose.isValidObjectId(rawId)) throw badRequest("Invalid customerId");
-    const existing = await User.findById(rawId);
-    if (!existing) throw notFound("Customer not found");
-    if (existing.role === USER_ROLE.FRANCHISE) {
-      throw badRequest("customerId must belong to a customer account");
-    }
-    return existing;
+  if (!id) {
+    throw badRequest(
+      "franchiseCustomerId is required. Register the customer and run the CIBIL check before applying."
+    );
   }
+  if (!mongoose.isValidObjectId(id)) throw badRequest("Invalid franchiseCustomerId");
 
-  const mobile = cleanText(payload.mobile);
-  if (!/^\d{10}$/.test(mobile)) throw badRequest("Applicant mobile (10 digits) is required");
+  // Franchise-scoped: dusri franchise ka customer yahan nahi milega.
+  const franchiseCustomer = await FranchiseCustomer.findOne({ _id: id, franchise: franchise._id });
+  if (!franchiseCustomer) throw notFound("Customer not found");
+
+  return franchiseCustomer;
+};
+
+/** Franchise customer ke apne details — form inhi se pre-filled chalta hai. */
+const applicantFromCustomer = (franchiseCustomer, payload) => {
+  const dob = franchiseCustomer.dob ? new Date(franchiseCustomer.dob).toISOString().slice(0, 10) : "";
+
+  const details = {
+    fullName: cleanText(franchiseCustomer.fullName),
+    mobile: cleanText(franchiseCustomer.mobile),
+    panNumber: cleanText(franchiseCustomer.panNumber).toUpperCase(),
+    dob,
+    // Customer profile ka email pehle, warna form ka.
+    email: cleanText(franchiseCustomer.email).toLowerCase() || cleanText(payload.email).toLowerCase(),
+  };
+
+  // Address details form me khaali chhoot gayi hon to profile se bhar do.
+  ["state", "city", "pincode"].forEach((field) => {
+    if (!cleanText(payload[field]) && cleanText(franchiseCustomer[field])) {
+      details[field] = cleanText(franchiseCustomer[field]);
+    }
+  });
+
+  return details;
+};
+
+/**
+ * Loan ka owner account (`users` collection).
+ *
+ * Franchise customer ke mobile se match hota hai; na mile to ek lightweight
+ * Customer account ban jaata hai, taaki `user` (aur "kitne loans apply kiye"
+ * report) ka owner hamesha ho.
+ */
+const resolveCustomerAccount = async (franchiseCustomer, email) => {
+  const mobile = cleanText(franchiseCustomer.mobile);
+  if (!/^\d{10}$/.test(mobile)) throw badRequest("Customer mobile (10 digits) is required");
 
   const existing = await User.findOne({ mobile });
   if (existing) {
@@ -171,23 +209,32 @@ const resolveCustomer = async (payload) => {
     return existing;
   }
 
-  const name = cleanText(payload.fullName);
-  const email = cleanText(payload.email);
-  if (!name) throw badRequest("Applicant full name is required for a new customer");
-  if (!email) throw badRequest("Applicant email is required for a new customer");
+  const emailLower = cleanText(email).toLowerCase();
+  if (!emailLower) {
+    throw badRequest(
+      "Customer email is required to create the loan owner account. Please add the email to the customer first."
+    );
+  }
 
-  const emailTaken = await User.findOne({ email: email.toLowerCase() });
-  if (emailTaken) throw badRequest("This email is already registered. Please pass customerId instead.");
+  const emailTaken = await User.findOne({ email: emailLower });
+  if (emailTaken) throw badRequest("This email is already registered. Please update the customer email first.");
 
   return User.create({
-    name,
+    name: cleanText(franchiseCustomer.fullName),
     mobile,
-    email,
+    email: emailLower,
     role: USER_ROLE.CUSTOMER,
     isVerified: false,
   });
 };
 
+/*
+Franchise loan apply — CIBIL gate ke saath:
+
+  franchiseCustomerId  -> franchise ka apna customer (required)
+  CIBIL eligible?     -> nahi to 403 (form locked, reason + score response me)
+  personal details    -> customer profile se aate hain (form inhe duplicate nahi karta)
+*/
 const createFranchiseLoan = async (franchise, body = {}) => {
   const payload = unwrap(body);
 
@@ -196,19 +243,33 @@ const createFranchiseLoan = async (franchise, body = {}) => {
     throw badRequest("A valid loan product is required");
   }
 
-  const customer = await resolveCustomer(payload);
+  const franchiseCustomer = await loadFranchiseCustomer(franchise, payload.franchiseCustomerId);
+
+  // LOCK: CIBIL check pending / failed / low score / report expired -> yahin ruk jaata hai.
+  const eligibility = buildEligibility(franchiseCustomer);
+  if (!eligibility.canApplyLoan) throw lockedError(eligibility);
+
+  const applicant = applicantFromCustomer(franchiseCustomer, payload);
+  const customer = await resolveCustomerAccount(franchiseCustomer, applicant.email);
 
   const applicationNo = await nextLoanApplicationNo();
 
-  const document = buildLoanDocument(product, payload, customer._id, {
+  const document = buildLoanDocument(product, { ...payload, ...applicant }, customer._id, {
     franchise: franchise._id,
     franchiseCode: franchise.franchiseId,
+    franchiseCustomer: franchiseCustomer._id,
     applicationNo,
   });
 
   const application = await MODELS[product].create(document);
 
-  return { application: sanitizeLoanResponse(product, application), product, customer };
+  return {
+    application: sanitizeLoanResponse(product, application),
+    product,
+    customer,
+    franchiseCustomer,
+    cibil: eligibility,
+  };
 };
 
 /* ----------------------------------------------------------------- list -- */
