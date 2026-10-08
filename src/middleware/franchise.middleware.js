@@ -1,4 +1,4 @@
-const User = require("../modules/auth/user.model");
+const Franchise = require("../modules/franchise/franchise.model");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../constants/roles");
 
 /*
@@ -43,7 +43,9 @@ const loadFranchise = async (req, res, next) => {
       return forbidden(res, "This endpoint is for franchise accounts only.");
     }
 
-    const franchise = await User.findById(req.user.id);
+    // Franchise apni collection (`franchises`) me rehti hai — customers ke
+    // `users` collection me nahi.
+    const franchise = await Franchise.findById(req.user.id);
 
     if (!franchise) {
       return forbidden(res, "Franchise account not found.");
