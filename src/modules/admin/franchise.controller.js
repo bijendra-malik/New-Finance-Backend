@@ -14,9 +14,21 @@ exports.list = async (req, res, next) => {
   try {
     const { status, search, page, limit } = req.query;
 
-    const franchises = await franchiseService.listFranchises({ status, search, page, limit });
+    const [franchises, total] = await Promise.all([
+      franchiseService.listFranchises({ status, search, page, limit }),
+      franchiseService.countFranchises({ status, search }),
+    ]);
+    const pageNumber = Math.max(Number(page) || 1, 1);
+    const pageLimit = Math.min(Math.max(Number(limit) || 0, 0), 100);
 
-    res.json({ success: true, franchises });
+    res.json({
+      success: true,
+      franchises,
+      total,
+      page: pageNumber,
+      limit: pageLimit,
+      totalPages: pageLimit > 0 ? Math.max(1, Math.ceil(total / pageLimit)) : 1,
+    });
   } catch (error) {
     next(error);
   }

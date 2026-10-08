@@ -1,11 +1,10 @@
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 
-const User = require("../auth/user.model");
+const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { nextFranchiseCode } = require("../../utils/sequence");
 const {
-  USER_ROLE,
   FRANCHISE_STATUS,
   FRANCHISE_STATUS_VALUES,
 } = require("../../constants/roles");
@@ -75,8 +74,9 @@ const withoutPassword = (franchise) => {
   return safe;
 };
 
-const listFranchises = async ({ status, search, page, limit } = {}) => {
-  const filter = { role: USER_ROLE.FRANCHISE };
+const buildFranchiseFilter = ({ status, search } = {}) => {
+  // The `franchises` collection contains only franchise accounts.
+  const filter = {};
 
   const wantedStatus = String(status ?? "").trim();
   if (wantedStatus) {
@@ -99,19 +99,27 @@ const listFranchises = async ({ status, search, page, limit } = {}) => {
     ];
   }
 
+  return filter;
+};
+
+const listFranchises = async ({ status, search, page, limit } = {}) => {
+  const filter = buildFranchiseFilter({ status, search });
   const safeLimit = Math.min(Math.max(Number(limit) || 0, 0), 100) || 0;
   const pageNumber = Math.max(Number(page) || 1, 1);
 
-  const query = User.find(filter).sort({ createdAt: -1 });
+  const query = Franchise.find(filter).sort({ createdAt: -1 });
   if (safeLimit > 0) query.skip((pageNumber - 1) * safeLimit).limit(safeLimit);
 
   return query;
 };
 
+const countFranchises = async ({ status, search } = {}) =>
+  Franchise.countDocuments(buildFranchiseFilter({ status, search }));
+
 const getFranchiseById = async (id) => {
   if (!mongoose.isValidObjectId(id)) throw notFound("Franchise not found");
 
-  const franchise = await User.findOne({ _id: id, role: USER_ROLE.FRANCHISE });
+  const franchise = await Franchise.findOne({ _id: id });
   if (!franchise) throw notFound("Franchise not found");
 
   return franchise;
@@ -224,6 +232,7 @@ const listFranchiseLoans = async (id) => {
 
 module.exports = {
   listFranchises,
+  countFranchises,
   getFranchiseById,
   approveFranchise,
   rejectFranchise,
