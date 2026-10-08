@@ -1,22 +1,22 @@
 const mongoose = require("mongoose");
-const {
-  USER_ROLE,
-  USER_ROLE_VALUES,
-  FRANCHISE_STATUS,
-  FRANCHISE_STATUS_VALUES,
-} = require("../../constants/roles");
+const { USER_ROLE, USER_ROLE_VALUES } = require("../../constants/roles");
 
 /*
 ==========================================
-One account collection for BOTH sides of the business:
+CUSTOMER accounts live in this collection (`users`).
 
-  role = Customer  -> direct applicant
-  role = Franchise -> channel partner (must be approved before it can apply)
+Franchise partners ka apna model/collection hai → modules/franchise/franchise.model.js
+(`franchises`), kyunki unke fields alag hain (package, PAN, FRN code, approval
+trail, login password) aur unhe alag manage karna hai.
 
-The role + this account's _id are baked into the JWT, so no endpoint ever has
-to trust a client-sent name/mobile. Franchise-specific fields (state, city,
-package, PAN, approval status, FRN code) live on the same document but are only
-filled once the franchise submits an application.
+Register me `role` se collection chunti hai (auth.controller.js). Is JWT me
+`{ id, mobile, role }` basta hai, isliye koi endpoint client ke bheje name/mobile
+par trust nahi karta.
+
+`USER_ROLE.FRANCHISE` is enum me sirf BACKWARD COMPATIBILITY ke liye rakha gaya
+hai: purane franchise documents (migration se pehle) save hone par validate ho
+jaayein. Naya franchise account yahan banega hi nahi — wo `franchises` me jaata
+hai, aur migration script unhe wahan le jaata hai (scripts/migrateFranchises.js).
 ==========================================
 */
 
@@ -68,41 +68,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-
-    /* ---------- Franchise-only fields ---------- */
-
-    // Approval lifecycle. Customers stay at "None".
-    franchiseStatus: {
-      type: String,
-      enum: FRANCHISE_STATUS_VALUES,
-      default: FRANCHISE_STATUS.NONE,
-    },
-
-    // MINTED BY THE ADMIN on approval (e.g. FRN000125) — this is the franchise's
-    // public login id. Sparse so customers don't collide on null.
-    franchiseId: {
-      type: String,
-      unique: true,
-      sparse: true,
-      trim: true,
-      default: undefined,
-    },
-
-    // Franchise application details.
-    panNumber: { type: String, trim: true, uppercase: true, default: "" },
-    state: { type: String, trim: true, default: "" },
-    city: { type: String, trim: true, default: "" },
-    pincode: { type: String, trim: true, default: "" },
-    package: { type: String, trim: true, default: "" },
-    businessDetails: { type: mongoose.Schema.Types.Mixed, default: {} },
-
-    franchiseAppliedAt: { type: Date, default: null },
-    franchiseApprovedAt: { type: Date, default: null },
-    franchiseRejectedAt: { type: Date, default: null },
-
-    // Franchise password (initially the PAN, always stored as a bcrypt hash).
-    // Never selected by default.
-    password: { type: String, select: false, default: undefined },
   },
   {
     timestamps: true,
