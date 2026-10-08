@@ -1,4 +1,5 @@
 const User = require("./user.model");
+const Franchise = require("../franchise/franchise.model");
 const OTP = require("./otp.model");
 const generateToken = require("../../utils/generateToken");
 const sendOTP = require("../../utils/sendOTP");
@@ -7,6 +8,31 @@ const {
   FRANCHISE_PROFILE_FIELDS,
   sanitizeFranchiseProfile,
 } = require("../franchise/franchiseProfile");
+
+/*
+==========================================
+Auth controller — role aware.
+
+Do collections hain:
+  users       -> Customer (legacy \"User\" bhi)
+  franchises  -> Franchise partner (apni collection, apne fields)
+
+Register me `role` body se aata hai, isliye account seedha sahi collection me
+banta hai. OTP document par bhi wahi role likh diya jaata hai, taaki
+verify-otp/login-verify ko guess na karna pade. Purane OTP records (jisme role
+nahi hai) ke liye `findAccountForMobile` dono collections me dekhta hai.
+==========================================
+*/
+
+const isFranchiseRole = (role) => role === USER_ROLE.FRANCHISE;
+
+/** Role -> us collection ka model. */
+const modelForRole = (role) => (isFranchiseRole(role) ? Franchise : User);
+
+/** Ulta model — duplicate mobile/email pakadne ke liye. */
+const otherModelFor = (Model) => (Model === Franchise ? User : Franchise);
+
+const roleLabel = (Model) => (Model === Franchise ? "franchise" : "customer");
 
 const authUserResponse = (user) => ({
   _id: user._id,
@@ -23,19 +49,60 @@ const authUserResponse = (user) => ({
   updatedAt: user.updatedAt,
 });
 
+/**
+ * Mobile se account dhoondhta hai — pehle role hint se, warna dono collections me.
+ * Reply me `{ account, Model }` aata hai taaki token/model usi ke saath bane.
+ */
+const findAccountForMobile = async (mobile, roleHint = "") => {
+  if (roleHint) {
+    const account = await modelForRole(roleHint).findOne({ mobile });
+    if (account) return { account, Model: modelForRole(roleHint) };
+  }
+
+  // Legacy OTP (role nahi hai) — dono collections check karo.
+  const customer = await User.findOne({ mobile });
+  if (customer) return { account: customer, Model: User };
+
+  const franchise = await Franchise.findOne({ mobile });
+  if (franchise) return { account: franchise, Model: Franchise };
+
+  return { account: null, Model: null };
+};
+
+/**
+ * Ek mobile/email dono jagah register nahi ho sakta: login mobile se hota hai,
+ * to duplicate rakhne par "kaun sa account" ka sawaal aa jaata hai.
+ */
+const conflictInOtherCollection = async (Model, { mobile, email }) => {
+  const Other = otherModelFor(Model);
+
+  const sameMobile = await Other.findOne({ mobile });
+  if (sameMobile) {
+    return `This mobile is already registered as a ${roleLabel(Other)}. Please use another mobile number or login instead.`;
+  }
+
+  if (email) {
+    const sameEmail = await Other.findOne({ email: String(email).toLowerCase() });
+    if (sameEmail) {
+      return `This email is already registered as a ${roleLabel(Other)}. Please use another email address.`;
+    }
+  }
+
+  return null;
+};
+
 /*
 ==========================================
 Register User & Send OTP
 POST /api/auth/register
 
-ONE endpoint for both account types. The body carries `role`
-("Customer" | "Franchise") plus the registration fields:
+ONE endpoint for both account types — `role` decides the collection:
 
   { role, continent, country, name, mobile, email }
 
-The role + location are stored on the account so the JWT (minted after OTP)
-already knows who the caller is. A second family of fields (PAN, state, city,
-package, ...) is collected later from the franchise application form.
+Role + location account par store hote hain, isliye OTP ke baad banne wala JWT
+already jaanta hai caller kaun hai. Franchise-specific fields (PAN, state, city,
+package, ...) baad me /api/franchise/apply se aate hain.
 ==========================================
 */
 
@@ -51,13 +118,23 @@ exports.register = async (req, res, next) => {
     }
 
     const accountRole = role || USER_ROLE.CUSTOMER;
+    const Model = modelForRole(accountRole);
 
-    const user = await User.findOne({ mobile });
+    // Franchise aur customer ka mobile overlap na ho — warna login ambiguous ho
+    // jaata hai (aur franchise ke naam par customer loan ka risk banta hai).
+    const conflict = await conflictInOtherCollection(Model, { mobile, email });
+    if (conflict) {
+      return res.status(400).json({ success: false, message: conflict });
+    }
 
-    if (user && user.isVerified) {
+    const account = await Model.findOne({ mobile });
+
+    if (account && account.isVerified) {
       return res.status(400).json({
         success: false,
-        message: "User already registered. Please login instead.",
+        message: isFranchiseRole(accountRole)
+          ? "Franchise already registered. Please login instead."
+          : "User already registered. Please login instead.",
       });
     }
 
@@ -66,32 +143,33 @@ exports.register = async (req, res, next) => {
     // Remove old OTP
     await OTP.deleteMany({ mobile });
 
-    // Save OTP
+    // Save OTP (role ke saath — verify isi se collection chunta hai)
     await OTP.create({
       mobile,
       otp,
+      role: accountRole,
       expiresAt: new Date(Date.now() + (process.env.OTP_EXPIRE_MINUTES || 5) * 60 * 1000),
     });
 
-    // Create or reuse the (still unverified) account.
-    if (!user) {
-      await User.create({
+    // Create or reuse the (still unverified) account in ITS OWN collection.
+    if (!account) {
+      await Model.create({
         name,
         mobile,
         email,
-        role: accountRole,
+        ...(isFranchiseRole(accountRole) ? {} : { role: accountRole }),
         continent: continent || "",
         country: country || "",
         isVerified: false,
       });
     } else {
       // Re-registration before OTP: refresh the details the applicant just typed.
-      user.name = name;
-      user.email = email;
-      user.role = accountRole;
-      if (continent !== undefined) user.continent = continent;
-      if (country !== undefined) user.country = country;
-      await user.save();
+      account.name = name;
+      account.email = email;
+      if (!isFranchiseRole(accountRole)) account.role = accountRole;
+      if (continent !== undefined) account.continent = continent;
+      if (country !== undefined) account.country = country;
+      await account.save();
     }
 
     const otpSent = await sendOTP(mobile, otp);
@@ -104,7 +182,7 @@ exports.register = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: user ? "OTP resent for verification" : "OTP sent successfully",
+      message: account ? "OTP resent for verification" : "OTP sent successfully",
     });
   } catch (error) {
     next(error);
@@ -149,27 +227,34 @@ exports.verifyOTP = async (req, res, next) => {
       });
     }
 
-    const user = await User.findOne({ mobile });
+    const { account } = await findAccountForMobile(mobile, otpData.role);
 
-    user.isVerified = true;
+    if (!account) {
+      return res.status(400).json({
+        success: false,
+        message: "Account not found. Please register first.",
+      });
+    }
 
-    await user.save();
+    account.isVerified = true;
+
+    await account.save();
 
     await OTP.deleteMany({ mobile });
 
-    const token = generateToken(user);
+    const token = generateToken(account);
 
     res.json({
       success: true,
       message: "Mobile Verified Successfully",
       token,
-      user: authUserResponse(user),
+      user: authUserResponse(account),
       // Tells the frontend where to route next:
       //   Customer            -> customer dashboard
       //   Franchise (None)    -> franchise application form
       //   Franchise (Pending) -> waiting-for-approval screen
       //   Franchise (Approved)-> franchise dashboard
-      nextStep: nextStepFor(user),
+      nextStep: nextStepFor(account),
     });
   } catch (error) {
     next(error);
@@ -194,16 +279,16 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    const user = await User.findOne({ mobile });
+    const { account } = await findAccountForMobile(mobile);
 
-    if (!user) {
+    if (!account) {
       return res.status(404).json({
         success: false,
         message: "No account found with this mobile number. Please register first.",
       });
     }
 
-    if (!user.isVerified) {
+    if (!account.isVerified) {
       return res.status(400).json({
         success: false,
         message: "Account not verified. Please complete registration OTP verification first.",
@@ -217,6 +302,7 @@ exports.login = async (req, res, next) => {
     await OTP.create({
       mobile,
       otp,
+      role: account.role || USER_ROLE.CUSTOMER,
       expiresAt: new Date(Date.now() + (process.env.OTP_EXPIRE_MINUTES || 5) * 60 * 1000),
     });
 
@@ -271,22 +357,29 @@ exports.verifyLoginOTP = async (req, res, next) => {
       });
     }
 
-    const user = await User.findOne({ mobile });
+    const { account } = await findAccountForMobile(mobile, otpData.role);
 
-    user.isVerified = true;
-    user.lastLogin = new Date();
+    if (!account) {
+      return res.status(400).json({
+        success: false,
+        message: "Account not found. Please register first.",
+      });
+    }
 
-    await user.save();
+    account.isVerified = true;
+    account.lastLogin = new Date();
+
+    await account.save();
 
     await OTP.deleteMany({ mobile });
 
-    const token = generateToken(user);
+    const token = generateToken(account);
 
     res.json({
       success: true,
       token,
-      user: authUserResponse(user),
-      nextStep: nextStepFor(user),
+      user: authUserResponse(account),
+      nextStep: nextStepFor(account),
     });
   } catch (error) {
     next(error);
@@ -296,13 +389,14 @@ exports.verifyLoginOTP = async (req, res, next) => {
 /*
 ==========================================
 Profile
-GET /api/auth/profile
+GET /api/auth/profile  (token ke role se sahi collection)
 ==========================================
 */
 
 exports.profile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const Model = modelForRole(req.user?.role);
+    const user = await Model.findById(req.user.id);
 
     res.json({
       success: true,
@@ -336,11 +430,11 @@ exports.customerProfile = async (req, res, next) => {
 
 exports.franchiseProfile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const franchise = await Franchise.findById(req.user.id);
 
     res.json({
       success: true,
-      user: sanitizeFranchiseProfile(user),
+      user: sanitizeFranchiseProfile(franchise),
     });
   } catch (error) {
     next(error);
@@ -348,11 +442,11 @@ exports.franchiseProfile = async (req, res, next) => {
 };
 
 /* Routes the client should open next, based on role + franchise status. */
-const nextStepFor = (user) => {
-  if (user.role !== USER_ROLE.FRANCHISE) return "customer-dashboard";
+const nextStepFor = (account) => {
+  if (account.role !== USER_ROLE.FRANCHISE) return "customer-dashboard";
 
-  if (user.franchiseStatus === FRANCHISE_STATUS.APPROVED) return "franchise-dashboard";
-  if (user.franchiseStatus === FRANCHISE_STATUS.PENDING) return "franchise-pending";
-  if (user.franchiseStatus === FRANCHISE_STATUS.REJECTED) return "franchise-rejected";
+  if (account.franchiseStatus === FRANCHISE_STATUS.APPROVED) return "franchise-dashboard";
+  if (account.franchiseStatus === FRANCHISE_STATUS.PENDING) return "franchise-pending";
+  if (account.franchiseStatus === FRANCHISE_STATUS.REJECTED) return "franchise-rejected";
   return "franchise-apply";
 };
