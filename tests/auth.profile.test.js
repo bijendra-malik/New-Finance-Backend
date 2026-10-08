@@ -1,11 +1,15 @@
 jest.mock("../src/modules/auth/user.model", () => ({
   findById: jest.fn(),
 }));
+jest.mock("../src/modules/franchise/franchise.model", () => ({
+  findById: jest.fn(),
+}));
 
 const User = require("../src/modules/auth/user.model");
+const Franchise = require("../src/modules/franchise/franchise.model");
 const authController = require("../src/modules/auth/auth.controller");
 
-const runProfile = async (handler) => {
+const runProfile = async (handler, user = { id: "user-id" }) => {
   const response = {
     statusCode: 200,
     status(code) {
@@ -19,7 +23,7 @@ const runProfile = async (handler) => {
   };
   const next = jest.fn();
 
-  await handler({ user: { id: "user-id" } }, response, next);
+  await handler({ user }, response, next);
 
   return { response, next };
 };
@@ -61,7 +65,7 @@ describe("role-specific auth profiles", () => {
     });
   });
 
-  it("returns account details and status without empty application fields", async () => {
+  it("reads a franchise profile from the franchises collection (not users)", async () => {
     const franchise = {
       _id: "user-id",
       name: "Amit",
@@ -78,11 +82,13 @@ describe("role-specific auth profiles", () => {
       franchiseApprovedAt: null,
       franchiseRejectedAt: null,
     };
-    User.findById.mockResolvedValue({ toObject: () => franchise });
+    Franchise.findById.mockResolvedValue({ toObject: () => franchise });
 
     const { response, next } = await runProfile(authController.franchiseProfile);
 
     expect(next).not.toHaveBeenCalled();
+    expect(Franchise.findById).toHaveBeenCalledWith("user-id");
+    expect(User.findById).not.toHaveBeenCalled();
     expect(response.payload.user).toEqual({
       _id: "user-id",
       name: "Amit",
@@ -102,10 +108,25 @@ describe("role-specific auth profiles", () => {
       city: "Mumbai",
       businessDetails: { businessName: "Amit Services" },
     };
-    User.findById.mockResolvedValue({ toObject: () => franchise });
+    Franchise.findById.mockResolvedValue({ toObject: () => franchise });
 
     const { response } = await runProfile(authController.franchiseProfile);
 
     expect(response.payload.user).toEqual(franchise);
+  });
+
+  it("GET /api/auth/profile follows the token's role to the right collection", async () => {
+    User.findById.mockResolvedValue({ _id: "user-id", role: "Customer" });
+
+    const { response } = await runProfile(authController.profile, { id: "user-id", role: "Customer" });
+
+    expect(User.findById).toHaveBeenCalledWith("user-id");
+    expect(response.payload.user).toMatchObject({ role: "Customer" });
+
+    Franchise.findById.mockResolvedValue({ _id: "frn-id", role: "Franchise" });
+
+    await runProfile(authController.profile, { id: "frn-id", role: "Franchise" });
+
+    expect(Franchise.findById).toHaveBeenCalledWith("frn-id");
   });
 });
