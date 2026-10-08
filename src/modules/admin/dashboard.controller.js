@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const User = require("../auth/user.model");
+const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanStatus");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { USER_ROLE } = require("../../constants/roles");
@@ -18,9 +19,10 @@ const ROUND = 2;
 const stats = async (req, res, next) => {
   try {
     const [totalCustomers, totalFranchises, products, recentRaw] = await Promise.all([
-      // Customers = every account that is NOT a franchise.
+      // Customers = users collection (legacy franchise docs bhi excluded).
       User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE } }),
-      User.countDocuments({ role: USER_ROLE.FRANCHISE }),
+      // Franchises apni collection me hain.
+      Franchise.countDocuments(),
       Promise.all(
         Object.entries(RESOURCE_ROUTES).map(async ([resource, entry]) => {
           const Model = MODELS[entry.productKey];
