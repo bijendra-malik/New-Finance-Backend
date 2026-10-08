@@ -30,11 +30,19 @@ Franchise API — mounted at /api/franchise
                      same, product in the PATH
                      e.g. /loan-apply/personalloan, /loan-apply/gold-loan
   GET  /loans        loans via this FRN     (APPROVED franchise only)
+
+  Franchise CUSTOMER (CIBIL gate — loan form tabhi khulta hai):
+  POST /customer                 basic details            (see franchiseCustomer.routes.js)
+  POST /customer/:id/cibil-check CIBIL score (consent)
+  GET  /customer/:id/eligibility lock state
 ========================================
 */
 
 // Public
 router.post("/login", adminLoginLimiter, franchiseLoginValidator, franchiseController.login);
+
+// Franchise ka apna customer + CIBIL check (approved franchise)
+router.use("/customer", require("./franchiseCustomer.routes"));
 
 // Franchise (any approval status)
 router.get("/profile", auth, requireFranchise, loadFranchise, franchiseController.profile);
