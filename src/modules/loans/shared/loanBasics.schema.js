@@ -24,6 +24,8 @@ const SERVER_MANAGED_FIELD_NAMES = [
   "franchiseCode",
   // Human-readable per-application id (LOAN000001).
   "applicationNo",
+  // Franchise ke apne customer ka record (CIBIL gate wala) — body se nahi aata.
+  "franchiseCustomer",
 ];
 
 /** Set by the admin panel (PATCH /{resource}/:id/status), never by an applicant. */
@@ -48,9 +50,15 @@ Franchise linkage (same for every product)
 ==========================================
 */
 const FRANCHISE_FIELDS = {
-  franchise: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  // Franchise apni alag collection me hai, isliye ref "Franchise" hai.
+  franchise: { type: mongoose.Schema.Types.ObjectId, ref: "Franchise", default: null },
   franchiseCode: { type: String, default: null },
   applicationNo: { type: String, default: null },
+  /*
+  Franchise ka apna customer (franchisecustomers collection) — jiska CIBIL check
+  pass hone ke baad hi form khula tha. Direct customer application me null.
+  */
+  franchiseCustomer: { type: mongoose.Schema.Types.ObjectId, ref: "FranchiseCustomer", default: null },
 };
 
 module.exports = {
