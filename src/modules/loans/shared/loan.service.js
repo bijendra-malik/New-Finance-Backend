@@ -166,6 +166,8 @@ const buildLoanDocument = (productKey, body, userId, options = {}) => {
   if (options.franchise) data.franchise = options.franchise;
   if (options.franchiseCode) data.franchiseCode = options.franchiseCode;
   if (options.applicationNo) data.applicationNo = options.applicationNo;
+  // Franchise ka apna customer (CIBIL gate) — direct application me nahi hota.
+  if (options.franchiseCustomer) data.franchiseCustomer = options.franchiseCustomer;
 
   dataFieldNames(config, employmentType).forEach((field) => {
     if (source[field] !== undefined) data[field] = source[field];

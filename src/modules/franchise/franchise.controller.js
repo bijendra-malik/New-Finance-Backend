@@ -89,25 +89,37 @@ Franchise Loan Apply (approved franchises only)
 POST /api/franchise/loan-apply
 
 Body: the selected product's normal apply payload, plus
-  product   -> "personal" | "business" | "home" | ... (LOAN_PRODUCTS key)
-  customerId (optional)  an already-registered customer
-  mobile / fullName / email  (used when there is no customerId)
+  product             -> "personal" | "business" | "home" | ... (LOAN_PRODUCTS key)
+  franchiseCustomerId -> POST /api/franchise/customer se bana customer (REQUIRED)
+
+Applicant ke personal details (fullName, mobile, PAN, DOB, email) franchise
+customer ke profile se aate hain — pehle CIBIL check pass hona zaroori hai,
+warna 403 + lock reason milta hai.
 */
 exports.loanApply = async (req, res, next) => {
   try {
-    const { application, product, customer } = await franchiseService.createFranchiseLoan(
-      req.franchise,
-      req.body
-    );
+    const { application, product, customer, franchiseCustomer, cibil } =
+      await franchiseService.createFranchiseLoan(req.franchise, req.body);
 
     res.status(201).json({
       success: true,
       product,
       customerId: customer._id,
       franchiseId: req.franchise.franchiseId,
+      franchiseCustomerId: franchiseCustomer._id,
+      cibil,
       data: application,
     });
   } catch (error) {
+    // CIBIL lock / low score / expired report -> frontend ko poora state chahiye.
+    if (error.statusCode === 403 && error.cibil) {
+      return res.status(403).json({
+        success: false,
+        message: error.message,
+        lockReason: error.lockReason,
+        cibil: error.cibil,
+      });
+    }
     next(error);
   }
 };
