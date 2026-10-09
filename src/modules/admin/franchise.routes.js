@@ -9,9 +9,9 @@ Admin franchise routes — mounted at /api/admin/franchises
 
   GET    /                 list applications (?status=&search=&page=&limit=)
   GET    /:id              one application
-  PATCH  /:id/approve      approve + mint FRN code + mobile password
+  PATCH  /:id/approve      approve + mint FRN code + PAN password
   PATCH  /:id/reject       reject                 { note? }
-  PATCH  /:id/reset-password  re-hash the password from the registered mobile
+  PATCH  /:id/reset-password  re-hash the password from the PAN number
   GET    /:id/loans        loans submitted through this FRN
 ==========================================
 */

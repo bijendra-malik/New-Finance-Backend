@@ -22,9 +22,9 @@ Flow (code me exactly yeh hota hai):
   POST /api/auth/register (role "Franchise")  -> franchiseStatus = "None"
   POST /api/auth/verify-otp                   -> JWT, nextStep = franchise-apply
   POST /api/franchise/apply                   -> franchiseStatus = "Pending"
-  PATCH /api/admin/franchises/:id/approve     -> FRN000125 + password hash
-  POST /api/franchise/login (FRN + password)  -> JWT
-  POST /api/franchise/loan-apply              -> loan (Approved hone ke baad hi)
+  PATCH /api/admin/franchises/:id/approve     -> FRN000125 + PAN ka password hash
+  POST /api/franchise/login (FRN + PAN)       -> JWT
+  POST /api/franchise/customer/:product/applyloan -> loan (Approved hone ke baad hi)
 
 Register karna = approved hona NAHI. Jab tak admin FRN + password nahi deta,
 franchise na dashboard khol sakti hai na koi loan apply kar sakti hai
@@ -118,8 +118,8 @@ const franchiseSchema = new mongoose.Schema(
     franchiseApprovedAt: { type: Date, default: null },
     franchiseRejectedAt: { type: Date, default: null },
 
-    // Initial password = registered mobile number, always stored as a bcrypt
-    // hash. Never selected by default.
+    // Initial password = PAN number (admin approval par set hota hai), sirf
+    // bcrypt hash ke roop me store hota hai. Never selected by default.
     password: { type: String, select: false, default: undefined },
   },
   {

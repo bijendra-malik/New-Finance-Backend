@@ -4,27 +4,21 @@ const FranchiseCustomer = require("./franchiseCustomer.model");
 const Franchise = require("./franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { buildStatusView } = require("../customer/customer.service");
-const { CIBIL_STATUS } = require("../../constants/cibil");
-const { buildEligibility, runCibilCheck } = require("./cibil/cibil.service");
 
 /*
 ==========================================
 Franchise customer service.
 
-Franchise flow ka pehla hissa:
+Franchise flow ke do kaam:
 
-  1. registerCustomer()  -> basic details save, CIBIL status = "NotChecked"
-                            (loan form LOCKED)
-  2. listCustomers()     -> is franchise ke apne customers (+ lock state)
-  3. getCustomer()       -> ek customer, franchise-scoped
-  4. updateCustomer()    -> details update; PAN/DOB badla to CIBIL reset
-                            (purana report us applicant ka nahi rehta)
-  5. runCibilCheck()     -> provider se score, phir lock/unlock decide
-  6. listCustomerLoans() -> us customer ke saare loans + wahi status/stage/timeline
-                            jo customer apne dashboard me dekhta hai
-  7. getCustomerLoan()   -> ek application ka status (LOAN000001)
+  1. Customer register karna — registerCustomer() basic details save karti hai,
+     listCustomers() / getCustomer() unhe padhti hain aur updateCustomer()
+     details badalti hai.
+  2. Un customers ke loans dekhna — listCustomerLoans() aur getCustomerLoan()
+     wahi status/stage/timeline dete hain jo customer apne dashboard par dekhta
+     hai (Submitted -> Under Review -> Approved/Rejected).
 
-Har query `franchise: <id>` par scoped hai — koi franchise dusre ka customer
+Har query `franchise: <id>` par scoped hai — koi franchise doosri ka customer
 padh ya use nahi kar sakti.
 ==========================================
 */
@@ -52,23 +46,10 @@ const unwrap = (body) =>
 
 const cleanText = (value) => String(value ?? "").trim();
 
-/** Fields jinke badalne par purana CIBIL report invalid ho jaata hai. */
-const CIBIL_IDENTITY_FIELDS = ["panNumber", "dob", "fullName", "mobile"];
-
-/** Customer doc ka public shape — cibil + lock state ke saath. */
+/** Customer doc ka public shape — mongoose internals hata kar plain object. */
 const serializeCustomer = (customer) => {
   const data = typeof customer.toObject === "function" ? customer.toObject() : { ...customer };
-  const eligibility = buildEligibility(customer);
-
-  return {
-    ...data,
-    cibil: eligibility,
-    loanForm: {
-      locked: eligibility.locked,
-      reason: eligibility.reason,
-      canApplyLoan: eligibility.canApplyLoan,
-    },
-  };
+  return { ...data };
 };
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -117,7 +98,6 @@ const registerCustomer = async (franchise, body = {}) => {
     state: cleanText(payload.state),
     city: cleanText(payload.city),
     pincode: cleanText(payload.pincode),
-    cibil: { status: CIBIL_STATUS.NOT_CHECKED },
   });
 
   return serializeCustomer(customer);
@@ -128,7 +108,7 @@ const registerCustomer = async (franchise, body = {}) => {
 const getCustomerDoc = async (franchise, id) => {
   if (!mongoose.isValidObjectId(id)) throw notFound("Customer not found");
 
-  // Franchise-scoped: dusri franchise ka customer 404 hi deta hai.
+  // Franchise-scoped: doosri franchise ka customer 404 hi deta hai.
   const customer = await FranchiseCustomer.findOne({ _id: id, franchise: franchise._id });
   if (!customer) throw notFound("Customer not found");
 
@@ -137,7 +117,14 @@ const getCustomerDoc = async (franchise, id) => {
 
 const getCustomer = async (franchise, id) => serializeCustomer(await getCustomerDoc(franchise, id));
 
-const listCustomers = async (franchise, { search, page, limit, cibilStatus, locked } = {}) => {
+/*
+Saare customers — search + pagination.
+
+`page`/`limit` DB level par lagte hain aur `total` ek alag countDocuments se
+aata hai, isliye page 2 ka response sahi `total`/`totalPages` deta hai (sirf
+current page ki length nahi).
+*/
+const listCustomers = async (franchise, { search, page, limit } = {}) => {
   const filter = { franchise: franchise._id };
 
   const q = cleanText(search);
@@ -146,27 +133,20 @@ const listCustomers = async (franchise, { search, page, limit, cibilStatus, lock
     filter.$or = [{ fullName: regex }, { mobile: regex }, { panNumber: regex }, { email: regex }];
   }
 
-  const wantedStatus = cleanText(cibilStatus);
-  if (wantedStatus) filter["cibil.status"] = wantedStatus;
-
   const safeLimit = Math.min(Math.max(Number(limit) || 0, 0), 100) || 0;
   const pageNumber = Math.max(Number(page) || 1, 1);
 
   const query = FranchiseCustomer.find(filter).sort({ createdAt: -1 });
   if (safeLimit > 0) query.skip((pageNumber - 1) * safeLimit).limit(safeLimit);
 
-  const customers = await query;
-  const serialized = await attachLoanCounts(franchise, customers.map(serializeCustomer));
-
-  // `locked=true|false` filter derived state par hota hai (report expiry bhi count hoti hai).
-  const wantedLocked = locked === true || locked === "true" || locked === "false" || locked === false;
-  const data = wantedLocked
-    ? serialized.filter((customer) => customer.loanForm.locked === (locked === true || locked === "true"))
-    : serialized;
+  const [docs, total] = await Promise.all([query, FranchiseCustomer.countDocuments(filter)]);
+  const data = await attachLoanCounts(franchise, docs.map(serializeCustomer));
 
   return {
-    total: data.length,
-    unlocked: data.filter((customer) => !customer.loanForm.locked).length,
+    total,
+    page: pageNumber,
+    limit: safeLimit,
+    totalPages: safeLimit > 0 ? Math.max(1, Math.ceil(total / safeLimit)) : 1,
     data,
   };
 };
@@ -177,14 +157,6 @@ const updateCustomer = async (franchise, id, body = {}) => {
   const payload = unwrap(body);
   const customer = await getCustomerDoc(franchise, id);
 
-  const identityChanged = CIBIL_IDENTITY_FIELDS.some((field) => {
-    if (payload[field] === undefined) return false;
-    const next = field === "panNumber" ? cleanText(payload[field]).toUpperCase() : cleanText(payload[field]);
-    const current = field === "dob" ? new Date(customer.dob).toISOString().slice(0, 10) : cleanText(customer[field]);
-    const nextComparable = field === "dob" ? new Date(next).toISOString().slice(0, 10) : next;
-    return next !== "" && nextComparable !== current;
-  });
-
   if (payload.fullName !== undefined) customer.fullName = cleanText(payload.fullName);
   if (payload.mobile !== undefined) customer.mobile = cleanText(payload.mobile);
   if (payload.panNumber !== undefined) customer.panNumber = cleanText(payload.panNumber).toUpperCase();
@@ -194,32 +166,6 @@ const updateCustomer = async (franchise, id, body = {}) => {
   if (payload.city !== undefined) customer.city = cleanText(payload.city);
   if (payload.pincode !== undefined) customer.pincode = cleanText(payload.pincode);
 
-  /*
-  PAN / DOB / naam / mobile badla to purana report us applicant ka nahi rehta —
-  form dobara LOCK ho jaata hai aur naya check maangta hai.
-  */
-  if (identityChanged) {
-    customer.cibil = { status: CIBIL_STATUS.NOT_CHECKED };
-    customer.cibilConsentAt = null;
-  }
-
-  await customer.save();
-
-  return serializeCustomer(customer);
-};
-
-/* --------------------------------------------------------- cibil check -- */
-
-const runCheck = async (franchise, id, { consent } = {}) => {
-  const customer = await getCustomerDoc(franchise, id);
-
-  if (consent !== true && consent !== "true") {
-    throw badRequest("Customer consent is required for a credit bureau (CIBIL) check");
-  }
-
-  customer.cibilConsentAt = new Date();
-
-  await runCibilCheck(customer);
   await customer.save();
 
   return serializeCustomer(customer);
@@ -275,7 +221,6 @@ const customerSummary = (customer) => ({
   mobile: customer.mobile,
   panNumber: customer.panNumber,
   email: customer.email || "",
-  cibil: buildEligibility(customer),
 });
 
 /**
@@ -340,32 +285,14 @@ const getCustomerLoan = async (franchise, id, applicationNo) => {
   throw notFound("Application not found");
 };
 
-const getEligibility = async (franchise, id) => {
-  const customer = await getCustomerDoc(franchise, id);
-
-  return {
-    customerId: customer._id,
-    name: customer.fullName,
-    cibil: buildEligibility(customer),
-    loanForm: {
-      locked: buildEligibility(customer).locked,
-      reason: buildEligibility(customer).reason,
-      canApplyLoan: buildEligibility(customer).canApplyLoan,
-    },
-  };
-};
-
 module.exports = {
   registerCustomer,
   listCustomers,
   getCustomer,
   getCustomerDoc,
   updateCustomer,
-  runCheck,
-  getEligibility,
   listCustomerLoans,
   getCustomerLoan,
   attachLoanCounts,
   serializeCustomer,
-  CIBIL_IDENTITY_FIELDS,
 };

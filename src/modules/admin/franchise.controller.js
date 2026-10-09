@@ -46,7 +46,7 @@ exports.getOne = async (req, res, next) => {
 
     res.json({
       success: true,
-      // Login ID + first password (the registered mobile) so the admin can re-share them later.
+      // Login ID + first password (the PAN number) so the admin can re-share them later.
       // null until the application has been approved.
       credentials: franchiseService.buildCredentials(franchise),
       loanCount,
@@ -97,7 +97,7 @@ exports.reject = async (req, res, next) => {
 };
 
 /*
-Reset the login password of an approved franchise to its registered mobile
+Reset the login password of an approved franchise to its PAN number
 (the current rule). Keeps the FRN code and approval status unchanged.
 PATCH /api/admin/franchises/:id/reset-password
 */

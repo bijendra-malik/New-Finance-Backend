@@ -7,13 +7,10 @@ const {
   loadFranchise,
   requireApprovedFranchise,
 } = require("../../middleware/franchise.middleware");
-const normalizeApplyPayload = require("../../middleware/normalizeApplyPayload.middleware");
-const { productFromParam } = require("../loans/shared/productApplyValidator");
 const { adminLoginLimiter } = require("../../middleware/rateLimit.middleware");
 const {
   franchiseLoginValidator,
   franchiseApplyValidator,
-  franchiseLoanApplyValidator,
 } = require("./franchise.validator");
 
 /*
@@ -24,24 +21,21 @@ Franchise API — mounted at /api/franchise
   GET  /profile      registration + status  (franchise token)
   POST /apply        franchise application  (franchise token)
   GET  /status       approval status        (franchise token)
-  POST /loan-apply   apply for a customer   (APPROVED franchise only)
-                     product in the BODY
-  POST /loan-apply/:product
-                     same, product in the PATH
-                     e.g. /loan-apply/personalloan, /loan-apply/gold-loan
   GET  /loans        loans via this FRN     (APPROVED franchise only)
 
-  Franchise CUSTOMER (CIBIL gate — loan form tabhi khulta hai):
-  POST /customer                 basic details            (see franchiseCustomer.routes.js)
-  POST /customer/:id/cibil-check CIBIL score (consent)
-  GET  /customer/:id/eligibility lock state
+Franchise ke apne CUSTOMERS aur unke loans alag router me hain:
+
+  POST /customer/register                   customer save
+  POST /customer/:product/applyloan         loan apply
+  GET  /customer, /customer/:id, ...
+  (poori list aur comments: franchiseCustomer.routes.js)
 ========================================
 */
 
 // Public
 router.post("/login", adminLoginLimiter, franchiseLoginValidator, franchiseController.login);
 
-// Franchise ka apna customer + CIBIL check (approved franchise)
+// Franchise ka apna customer — register + loan apply
 router.use("/customer", require("./franchiseCustomer.routes"));
 
 // Franchise (any approval status)
@@ -50,29 +44,6 @@ router.get("/status", auth, requireFranchise, loadFranchise, franchiseController
 router.post("/apply", auth, requireFranchise, franchiseApplyValidator, franchiseController.apply);
 
 // Approved franchise only
-// Product in the body:  { "product": "personal", ... }
-router.post(
-  "/loan-apply",
-  auth,
-  requireApprovedFranchise,
-  normalizeApplyPayload,
-  franchiseLoanApplyValidator,
-  franchiseController.loanApply
-);
-
-// Product in the path:  POST /loan-apply/personalloan
-// (`productFromParam` pins :product onto the body, then the same product
-// validator + controller run, so both entry points behave identically.)
-router.post(
-  "/loan-apply/:product",
-  auth,
-  requireApprovedFranchise,
-  normalizeApplyPayload,
-  productFromParam,
-  franchiseLoanApplyValidator,
-  franchiseController.loanApply
-);
-
 router.get("/loans", auth, requireApprovedFranchise, franchiseController.myLoans);
 
 module.exports = router;
