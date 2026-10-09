@@ -12,7 +12,7 @@ blocker for closing the "no rate limiting at all" gap.
 // OTP request endpoints (register/login) — these trigger an SMS send per call.
 const otpRequestLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 5,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
