@@ -86,19 +86,19 @@ exports.status = async (req, res, next) => {
 
 /*
 Franchise Loan Apply (approved franchises only)
-POST /api/franchise/loan-apply
+POST /api/franchise/customer/:product/applyloan
 
-Body: the selected product's normal apply payload, plus
-  product             -> "personal" | "business" | "home" | ... (LOAN_PRODUCTS key)
-  franchiseCustomerId -> POST /api/franchise/customer se bana customer (REQUIRED)
+`product` URL se aata hai (route par `productFromParam` use hota hai), body me
+selected product ka normal apply payload + ye do cheezein bheji jaati hain:
+
+  franchiseCustomerId -> POST /api/franchise/customer/register se bana customer
 
 Applicant ke personal details (fullName, mobile, PAN, DOB, email) franchise
-customer ke profile se aate hain — pehle CIBIL check pass hona zaroori hai,
-warna 403 + lock reason milta hai.
+customer ke profile se aate hain — form inhe dobara nahi bhejta.
 */
 exports.loanApply = async (req, res, next) => {
   try {
-    const { application, product, customer, franchiseCustomer, cibil } =
+    const { application, product, customer, franchiseCustomer } =
       await franchiseService.createFranchiseLoan(req.franchise, req.body);
 
     res.status(201).json({
@@ -107,19 +107,9 @@ exports.loanApply = async (req, res, next) => {
       customerId: customer._id,
       franchiseId: req.franchise.franchiseId,
       franchiseCustomerId: franchiseCustomer._id,
-      cibil,
       data: application,
     });
   } catch (error) {
-    // CIBIL lock / low score / expired report -> frontend ko poora state chahiye.
-    if (error.statusCode === 403 && error.cibil) {
-      return res.status(403).json({
-        success: false,
-        message: error.message,
-        lockReason: error.lockReason,
-        cibil: error.cibil,
-      });
-    }
     next(error);
   }
 };

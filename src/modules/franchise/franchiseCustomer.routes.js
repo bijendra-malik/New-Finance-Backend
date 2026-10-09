@@ -1,46 +1,58 @@
 const router = require("express").Router();
 
 const controller = require("./franchiseCustomer.controller");
+const franchiseController = require("./franchise.controller");
 const auth = require("../../middleware/auth.middleware");
 const { requireApprovedFranchise } = require("../../middleware/franchise.middleware");
+const normalizeApplyPayload = require("../../middleware/normalizeApplyPayload.middleware");
+const { productFromParam } = require("../loans/shared/productApplyValidator");
 const {
   franchiseCustomerValidator,
   franchiseCustomerUpdateValidator,
-  cibilCheckValidator,
 } = require("./franchiseCustomer.validator");
+const { franchiseLoanApplyValidator } = require("./franchise.validator");
 
 /*
 ========================================
 Franchise customer API — mounted at /api/franchise/customer
 (APPROVED franchise only, franchise token)
 
-Ye flow franchise ke loan form ko lock/unlock karta hai:
+  POST   /register                     naya customer register karo
+  POST   /:product/applyloan           usi customer ke liye loan apply karo
+                                       e.g. /customer/personal/applyloan
+                                            /customer/gold-loan/applyloan
+                                       (customer id body me `franchiseCustomerId`)
 
-  POST   /                basic details save        -> loan form LOCKED
-  POST   /:id/cibil-check CIBIL score (consent)     -> unlock agar eligible
-  GET    /:id/eligibility lock state (frontend gate)
-  GET    /                apne customers (+ lock state + loan count)
-  GET    /:id             ek customer ki poori detail
-  PATCH  /:id             details update (PAN/DOB badle to dobara LOCKED)
-  GET    /:id/loans       us customer ke saare loans + status/stage/timeline
-  GET    /:id/loans/:applicationNo   ek loan ka status (LOAN000001)
+  GET    /                             apne customers (search + pagination)
+  GET    /:id                          ek customer ki poori detail
+  PATCH  /:id                          details update
+  GET    /:id/loans                    us customer ke saare loans + status/timeline
+  GET    /:id/loans/:applicationNo     ek loan ka status (LOAN000001)
 
-Loan apply alag hai: POST /api/franchise/loan-apply (franchiseCustomerId ke
-saath, aur sirf eligible customer par).
+Flow seedha hai: pehle `register` (customer save), phir `:product/applyloan`.
+Loan apply product ko URL se leta hai; `productFromParam` us segment ko
+LOAN_PRODUCTS key me badal kar body par pin kar deta hai, isliye usi product ke
+normal validation rules chalti hain.
 ========================================
 */
 
-router.post("/", auth, requireApprovedFranchise, franchiseCustomerValidator, controller.register);
+router.post("/register", auth, requireApprovedFranchise, franchiseCustomerValidator, controller.register);
+
+router.post(
+  "/:product/applyloan",
+  auth,
+  requireApprovedFranchise,
+  normalizeApplyPayload,
+  productFromParam,
+  franchiseLoanApplyValidator,
+  franchiseController.loanApply
+);
 
 router.get("/", auth, requireApprovedFranchise, controller.list);
 
 router.get("/:id", auth, requireApprovedFranchise, controller.getOne);
 
 router.patch("/:id", auth, requireApprovedFranchise, franchiseCustomerUpdateValidator, controller.update);
-
-router.post("/:id/cibil-check", auth, requireApprovedFranchise, cibilCheckValidator, controller.cibilCheck);
-
-router.get("/:id/eligibility", auth, requireApprovedFranchise, controller.eligibility);
 
 // Customer ki loan tracking — franchise apne customer ka status dekhta hai
 router.get("/:id/loans", auth, requireApprovedFranchise, controller.loans);

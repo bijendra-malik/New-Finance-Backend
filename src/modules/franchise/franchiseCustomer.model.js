@@ -1,52 +1,32 @@
 const mongoose = require("mongoose");
-const { CIBIL_STATUS, CIBIL_STATUS_VALUES } = require("../../constants/cibil");
 
 /*
 ==========================================
 Franchise ka apna customer — `franchisecustomers` collection.
 
-Franchise apne walk-in customer ko yahan register karta hai (basic details), aur
-usi document par uska CIBIL result store hota hai. Loan form TABHI khulta hai
-jab CIBIL check pass ho jaaye:
+Franchise apne walk-in customer ko yahan register karta hai, aur usi customer ke
+naam par loan apply karta hai:
 
-  POST /api/franchise/customer                    -> basic details save, LOCKED
-  POST /api/franchise/customer/:id/cibil-check     -> score aata hai
-  GET  /api/franchise/customer/:id/eligibility     -> canApplyLoan true/false
-  POST /api/franchise/loan-apply                   -> sirf eligible customer par
+  POST /api/franchise/customer/register              -> customer save
+  POST /api/franchise/customer/:product/applyloan    -> usi customer ke liye loan
 
-Customer account (`users` collection) alag hi rehta hai: loan banate waqt mobile
-se wahi account link/create hota hai, taaki customer apna loan dekh sake.
+Sirf wahi personal details rakhi jaati hain jo loan application ke liye chahiye
+(naam, mobile, PAN, DOB + optional email/state/city/pincode). Loan ke waqt
+applicant ki details isi document se uthai jaati hain, isliye form inhe dobara
+nahi bhejta.
 
-`franchise` field hi ownership hai — ek franchise dusre franchise ke customer ko
-na dekhe na use kare.
+Customer ka login account (`users` collection) alag hota hai: loan banate waqt
+mobile se wahi account link ya create kiya jaata hai, taaki customer apna loan
+apne dashboard par dekh sake.
+
+`franchise` field hi ownership hai — ek franchise doosri franchise ke customer ko
+na dekh sakti hai na use kar sakti hai.
 ==========================================
 */
 
-const cibilSchema = new mongoose.Schema(
-  {
-    // "NotChecked" -> abhi tak check nahi (form LOCKED)
-    // "Checked"    -> score mila (threshold se compare hota hai)
-    // "Failed"     -> provider ne jawab nahi diya (dobara try karein)
-    status: {
-      type: String,
-      enum: CIBIL_STATUS_VALUES,
-      default: CIBIL_STATUS.NOT_CHECKED,
-    },
-    score: { type: Number, default: null },
-    band: { type: String, default: null },
-    bureau: { type: String, default: null },
-    provider: { type: String, default: null },
-    referenceId: { type: String, default: null },
-    checkedAt: { type: Date, default: null },
-    expiresAt: { type: Date, default: null },
-    failureReason: { type: String, default: null },
-  },
-  { _id: false }
-);
-
 const franchiseCustomerSchema = new mongoose.Schema(
   {
-    // Owner franchise — yehi cheez customer ko franchise-scoped banati hai.
+    // Owner franchise — yehi field customer ko franchise-scoped banata hai.
     franchise: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Franchise",
@@ -57,14 +37,11 @@ const franchiseCustomerSchema = new mongoose.Schema(
     // Franchise ka public FRN code (reports me join ki zaroorat na pade).
     franchiseCode: { type: String, default: null },
 
-    /* ---- Step 1: basic details (CIBIL check ke liye bhi yahi chahiye) ---- */
-
     /*
-    Sirf wahi details jo normal customer ki hoti hain — is list ke alawa yahan
-    kuch nahi rakhna (nahi occupation, nahi income, nahi gender/address/notes).
-    Franchise ke liye extra cheezen `notes` ki jagah loan application par hain.
+    Sirf normal customer wali details. Is list ke alawa yahan kuch nahi rakhna —
+    na occupation, na income, na gender/address/notes. Franchise-specific extra
+    cheezein loan application par rehti hain, customer profile me nahi.
     */
-
     fullName: { type: String, required: [true, "Customer name is required"], trim: true },
     mobile: { type: String, required: [true, "Mobile number is required"], trim: true },
     panNumber: {
@@ -78,19 +55,13 @@ const franchiseCustomerSchema = new mongoose.Schema(
     state: { type: String, trim: true, default: "" },
     city: { type: String, trim: true, default: "" },
     pincode: { type: String, trim: true, default: "" },
-
-    // Customer ne bureau check ki likhit sehmati di (bureau ki requirement).
-    cibilConsentAt: { type: Date, default: null },
-
-    /* ---- Step 2: credit check result ---- */
-    cibil: { type: cibilSchema, default: () => ({}) },
   },
   { timestamps: true }
 );
 
 /*
-Ek franchise ek mobile ko do baar register na kare (duplicate CIBIL checks aur
-duplicate loan owners se bachne ke liye). Dusri franchise apna customer alag se
+Ek franchise ek mobile ko do baar register na kare (duplicate customers aur
+duplicate loan owners se bachne ke liye). Doosri franchise apna customer alag se
 rakh sakti hai — isliye index franchise-scoped hai.
 */
 franchiseCustomerSchema.index({ franchise: 1, mobile: 1 }, { unique: true });

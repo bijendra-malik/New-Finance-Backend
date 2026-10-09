@@ -4,7 +4,6 @@ const bcrypt = require("bcryptjs");
 const User = require("../auth/user.model");
 const Franchise = require("./franchise.model");
 const FranchiseCustomer = require("./franchiseCustomer.model");
-const { buildEligibility, lockedError } = require("./cibil/cibil.service");
 const generateToken = require("../../utils/generateToken");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS } = require("../loans/shared/loanModels");
@@ -21,9 +20,9 @@ a customer (role = "Franchise"). Everything franchise-specific happens here:
 
   1. applyFranchise()      -> profile details, franchiseStatus = Pending
   2. loginFranchise()      -> FRN code + password -> JWT
-  3. createFranchiseLoan() -> approved franchise applies for its OWN customer,
-                             aur sirf tab jab uska CIBIL check pass ho
-                             (customer + CIBIL ka kaam franchiseCustomer.service.js me hai)
+  3. createFranchiseLoan() -> approved franchise applies for its OWN customer
+                             (customer register/read ka kaam
+                              franchiseCustomer.service.js me hai)
   4. listFranchiseLoans()  -> all loans submitted through this FRN, grouped
 
 The admin actions (approve / reject, which mint the FRN code) live in
@@ -108,9 +107,9 @@ const applyFranchise = async (userId, body = {}) => {
 /* ---------------------------------------------------------------- login -- */
 
 /*
-Franchise login is deliberate: FRN code + password (initially the registered
-mobile number, hashed by the admin on approval). Returns the same JWT shape as
-the customer login so the rest of the API is unchanged.
+Franchise login is deliberate: FRN code + password (initially the PAN number,
+hashed by the admin on approval). Returns the same JWT shape as the customer
+login so the rest of the API is unchanged.
 */
 const loginFranchise = async (franchiseId, password) => {
   const code = cleanText(franchiseId).toUpperCase();
@@ -147,15 +146,16 @@ const loginFranchise = async (franchiseId, password) => {
 /**
  * Franchise ka apna customer (franchisecustomers collection) — franchise-scoped.
  *
- * Loan apply ka pehla requirement yahi doc hai: iske bina (aur iska CIBIL check
- * pass hone se pehle) loan form LOCKED rehta hai.
+ * Loan apply ka pehla requirement yahi doc hai: pehle
+ * POST /api/franchise/customer/register se customer banao, phir uski `_id`
+ * `franchiseCustomerId` ke roop me bhejo.
  */
 const loadFranchiseCustomer = async (franchise, rawId) => {
   const id = cleanText(rawId);
 
   if (!id) {
     throw badRequest(
-      "franchiseCustomerId is required. Register the customer and run the CIBIL check before applying."
+      "franchiseCustomerId is required. Register the customer at POST /api/franchise/customer/register first."
     );
   }
   if (!mongoose.isValidObjectId(id)) throw badRequest("Invalid franchiseCustomerId");
@@ -229,11 +229,15 @@ const resolveCustomerAccount = async (franchiseCustomer, email) => {
 };
 
 /*
-Franchise loan apply — CIBIL gate ke saath:
+Franchise loan apply:
 
-  franchiseCustomerId  -> franchise ka apna customer (required)
-  CIBIL eligible?     -> nahi to 403 (form locked, reason + score response me)
-  personal details    -> customer profile se aate hain (form inhe duplicate nahi karta)
+  product               -> LOAN_PRODUCTS key (URL se `/:product/applyloan`)
+  franchiseCustomerId   -> franchise ka apna customer (required)
+  personal details      -> customer profile se aate hain (form inhe duplicate nahi karta)
+
+Product-specific fields (loanAmount, employmentType, companyName ...) normal
+apply payload ki tarah bheje jaate hain; validation route par usi product ke
+rules se hoti hai.
 */
 const createFranchiseLoan = async (franchise, body = {}) => {
   const payload = unwrap(body);
@@ -244,10 +248,6 @@ const createFranchiseLoan = async (franchise, body = {}) => {
   }
 
   const franchiseCustomer = await loadFranchiseCustomer(franchise, payload.franchiseCustomerId);
-
-  // LOCK: CIBIL check pending / failed / low score / report expired -> yahin ruk jaata hai.
-  const eligibility = buildEligibility(franchiseCustomer);
-  if (!eligibility.canApplyLoan) throw lockedError(eligibility);
 
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
   const customer = await resolveCustomerAccount(franchiseCustomer, applicant.email);
@@ -268,7 +268,6 @@ const createFranchiseLoan = async (franchise, body = {}) => {
     product,
     customer,
     franchiseCustomer,
-    cibil: eligibility,
   };
 };
 
