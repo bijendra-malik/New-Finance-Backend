@@ -56,12 +56,30 @@ const unwrap = (body) =>
 
 const cleanText = (value) => String(value ?? "").trim();
 
+const findOrMigrateFranchise = async (userId) => {
+  const franchise = await Franchise.findById(userId);
+  if (franchise) return franchise;
+
+  if (!mongoose.isValidObjectId(userId)) return null;
+
+  // Older franchise accounts may still exist only in `users`. Copy the raw
+  // document so legacy franchise fields are preserved, keeping its ID so the
+  // already-issued JWT continues to identify the same account.
+  const legacy = await User.collection.findOne({
+    _id: new mongoose.Types.ObjectId(userId),
+    role: USER_ROLE.FRANCHISE,
+  });
+  if (!legacy) return null;
+
+  return Franchise.create({ ...legacy, role: USER_ROLE.FRANCHISE });
+};
+
 /* ---------------------------------------------------------------- apply -- */
 
 const applyFranchise = async (userId, body = {}) => {
   const payload = unwrap(body);
 
-  const franchise = await Franchise.findById(userId);
+  const franchise = await findOrMigrateFranchise(userId);
   if (!franchise) throw notFound("Franchise account not found");
 
   if (franchise.franchiseStatus === FRANCHISE_STATUS.APPROVED) {
