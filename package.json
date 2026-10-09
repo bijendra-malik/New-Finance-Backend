@@ -9,7 +9,6 @@
     "seed:pincodes": "node scripts/seedPincodes.js",
     "seed:admin": "node scripts/seedAdmin.js",
     "import:location": "node scripts/importLocation.js",
-    "e2e": "node scripts/e2e-apply-check.js",
     "test": "jest"
   },
   "keywords": [],
