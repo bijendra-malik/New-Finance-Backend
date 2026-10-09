@@ -8,18 +8,16 @@ const { adultApplicantCheck } = require("../loans/shared/personalDetails.rules")
 ==========================================
 Franchise customer validators.
 
-Step 1 (register): basic details — inke bina bureau check ho hi nahi sakta,
-isliye fullName + mobile + PAN + DOB mandatory hain.
-Step 2 (cibil-check): customer ki likhit sehmati (consent) mandatory hai.
+Register: customer ki basic details. Ye fields loan application ka base hain,
+isliye fullName + mobile + PAN + DOB mandatory hain aur applicant adult hona
+chahiye. Baaki (email/state/city/pincode) optional hain.
+
+Update: saare fields optional, par jo bheji gayi value valid honi chahiye.
 ==========================================
 */
 
 const optionalText = (field) => body(field).optional({ values: "falsy" }).trim().isString();
 
-/*
-Sirf normal customer wale fields — body me occupation / monthlyIncome /
-gender / address / notes bhejne par wo kahin jaate bhi nahi (schema me nahi hain).
-*/
 const franchiseCustomerValidator = [
   body("fullName").trim().notEmpty().withMessage("Customer full name is required"),
   body("mobile").trim().matches(MOBILE_PATTERN).withMessage("Enter a valid 10-digit mobile number"),
@@ -40,7 +38,6 @@ const franchiseCustomerValidator = [
   handleValidationErrors,
 ];
 
-/* Update: sab fields optional, par bheji gayi value valid honi chahiye. */
 const franchiseCustomerUpdateValidator = [
   body("fullName").optional({ values: "falsy" }).trim().notEmpty().withMessage("Customer full name is required"),
   body("mobile")
@@ -64,21 +61,7 @@ const franchiseCustomerUpdateValidator = [
   handleValidationErrors,
 ];
 
-/*
-Bureau check ke liye customer ki consent chahiye — bina consent check shuru hi
-nahi hota, isliye ye rule mandatory hai (`consent: true`).
-*/
-const cibilCheckValidator = [
-  body("consent")
-    .custom((value) => {
-      if (value === true || value === "true") return true;
-      throw new Error("Customer consent is required for a credit bureau (CIBIL) check");
-    }),
-  handleValidationErrors,
-];
-
 module.exports = {
   franchiseCustomerValidator,
   franchiseCustomerUpdateValidator,
-  cibilCheckValidator,
 };

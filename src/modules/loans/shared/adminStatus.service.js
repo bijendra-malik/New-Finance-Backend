@@ -324,20 +324,6 @@ const listCustomerApplications = async (req, res, next) => {
   }
 };
 
-/** Application counts for one customer (grouped per product). */
-const countApplicationsByProduct = async (customerId) => {
-  const counts = {};
-  let total = 0;
-  for (const [productKey, Model] of Object.entries(MODELS)) {
-    const count = await Model.countDocuments({ user: customerId });
-    if (count > 0) {
-      counts[productKey] = count;
-      total += count;
-    }
-  }
-  return { counts, total };
-};
-
 module.exports = {
   RESOURCE_ROUTES,
   modelFor,
@@ -347,6 +333,5 @@ module.exports = {
   updateStatusHandler,
   deleteApplicationHandler,
   listCustomerApplications,
-  countApplicationsByProduct,
   isValidObjectId,
 };

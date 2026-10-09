@@ -5,10 +5,12 @@ const { LOAN_PRODUCTS } = require("./loanProducts");
 ==========================================
 Product-dispatched apply validator.
 
-The per-product routes know their product at route-definition time, but the
-unified entry points (POST /api/customer/loan-apply and
-POST /api/franchise/loan-apply) receive `product` in the body and must pick the
-matching rules AT REQUEST TIME.
+Per-product routes know their product at route-definition time. The unified
+entry points must instead pick the matching rules AT REQUEST TIME:
+
+  POST /api/customer/loan-apply                  -> `product` in the BODY
+  POST /api/franchise/customer/:product/applyloan -> `product` in the PATH
+     (`productFromParam` pins it onto the body, then the same dispatcher runs)
 
 The loan payload itself is identical to the per-product APIs — only the entry
 point and the recorded channel differ.
@@ -50,9 +52,9 @@ const buildProductApplyValidator = () => (req, res, next) => {
 Maps a URL segment onto a LOAN_PRODUCTS key, so a product can also be named in
 the path instead of the body:
 
-  /loan-apply/personal          /loan-apply/personalloan
-  /loan-apply/personal-loan     /loan-apply/gold-loan
-  /loan-apply/loan-against-property  /loan-apply/credit-card
+  /customer/personal/applyloan          /customer/personalloan/applyloan
+  /customer/personal-loan/applyloan     /customer/gold-loan/applyloan
+  /customer/loan-against-property/applyloan   /customer/credit-card/applyloan
 
 every one of those resolves to its config key ("personal", "goldLoan",
 "lap", "creditCard", ...). Keys, keys + "loan", and the product's human
