@@ -196,7 +196,7 @@ describe("utils/sequence", () => {
 });
 
 describe("admin franchise credentials", () => {
-  it("exposes the FRN login id + mobile password once approved", () => {
+  it("exposes the FRN login id + PAN password once approved", () => {
     const credentials = adminFranchiseService.buildCredentials({
       franchiseId: "FRN000001",
       mobile: "9876543210",
@@ -205,8 +205,8 @@ describe("admin franchise credentials", () => {
     });
 
     expect(credentials.loginId).toBe("FRN000001");
-    expect(credentials.password).toBe("9876543210");
-    expect(credentials.passwordIsMobile).toBe(true);
+    expect(credentials.password).toBe("ABCDE1234F");
+    expect(credentials.passwordIsPan).toBe(true);
   });
 
   it("returns null until an FRN has been minted", () => {

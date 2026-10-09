@@ -19,7 +19,6 @@ const adminService = require("../src/modules/admin/franchiseCustomer.service");
 const adminController = require("../src/modules/admin/franchiseCustomer.controller");
 const { MODELS } = require("../src/modules/loans/shared/loanModels");
 
-const FUTURE = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 const FC_ID = new mongoose.Types.ObjectId().toString();
 const FRN_ID = new mongoose.Types.ObjectId().toString();
 const OTHER_FRN_ID = new mongoose.Types.ObjectId().toString();
@@ -33,8 +32,6 @@ const customerDoc = (overrides = {}) => ({
   panNumber: "ABCDE1234F",
   email: "rahul@example.com",
   dob: new Date("1995-05-15"),
-  cibilConsentAt: new Date("2026-10-01T00:00:00.000Z"),
-  cibil: { status: "Checked", score: 720, expiresAt: FUTURE, checkedAt: new Date(), provider: "mock" },
   toObject() {
     const { toObject, save, ...rest } = this;
     return rest;
@@ -85,7 +82,7 @@ describe("admin franchise customer list", () => {
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => jest.restoreAllMocks());
 
-  it("lists customers across franchises with owner FRN, CIBIL state and loan counts", async () => {
+  it("lists customers across franchises with owner FRN and loan counts", async () => {
     FranchiseCustomer.find.mockReturnValue(listQuery([customerDoc()]));
     Franchise.find.mockReturnValue({ select: jest.fn().mockResolvedValue([ownerFranchise]) });
     Object.values(MODELS).forEach((Model) =>
@@ -106,44 +103,26 @@ describe("admin franchise customer list", () => {
       fullName: "Rahul Sharma",
       franchise: { name: "Amit", franchiseId: "FRN000001", franchiseStatus: "Approved" },
       loans: { count: 2 },
-      cibil: expect.objectContaining({ status: "Checked", score: 720, canApplyLoan: true, locked: false }),
-      loanForm: { locked: false, reason: null, canApplyLoan: true },
     });
-    expect(rows[0].cibilConsentAt).toBeInstanceOf(Date);
+    expect(rows[0]).not.toHaveProperty("cibil");
   });
 
-  it("builds the FRN / search / cibilStatus / locked filters in one query", async () => {
+  it("builds the FRN + search filters in one query", async () => {
     FranchiseCustomer.find.mockReturnValue(listQuery([]));
 
-    await adminService.listFranchiseCustomers({
-      franchise: "frn000001",
-      search: "rahul",
-      cibilStatus: "Checked",
-      locked: "true",
-      page: 2,
-      limit: 5,
-    });
+    await adminService.listFranchiseCustomers({ franchise: "frn000001", search: "rahul", page: 2, limit: 5 });
 
     const filter = FranchiseCustomer.find.mock.calls[0][0];
     expect(filter.franchiseCode).toEqual(/^FRN000001$/i);
-    expect(filter["cibil.status"]).toBe("Checked");
     expect(filter.$or).toEqual([
       { fullName: /rahul/i },
       { mobile: /rahul/i },
       { panNumber: /rahul/i },
       { email: /rahul/i },
     ]);
-    // locked derived state par $expr se filter hota hai (pagination ke baad nahi).
-    expect(filter.$expr).toHaveProperty("$not");
-
-    // locked=false ulta eligible expression lagata hai.
-    FranchiseCustomer.find.mockReturnValue(listQuery([]));
-    await adminService.listFranchiseCustomers({ locked: "false" });
-    const unlockedFilter = FranchiseCustomer.find.mock.calls[1][0];
-    expect(unlockedFilter.$expr).toHaveProperty("$and");
   });
 
-  it("accepts a franchise id and rejects invalid filter values with 400", async () => {
+  it("accepts a franchise id and rejects an invalid franchise filter with 400", async () => {
     FranchiseCustomer.find.mockReturnValue(listQuery([]));
 
     await adminService.listFranchiseCustomers({ franchise: FRN_ID });
@@ -152,21 +131,17 @@ describe("admin franchise customer list", () => {
     await expect(adminService.listFranchiseCustomers({ franchise: "not-a-frn" })).rejects.toMatchObject({
       statusCode: 400,
     });
-    await expect(adminService.listFranchiseCustomers({ cibilStatus: "Bogus" })).rejects.toMatchObject({
-      statusCode: 400,
-    });
-    await expect(adminService.listFranchiseCustomers({ locked: "maybe" })).rejects.toMatchObject({
-      statusCode: 400,
-    });
   });
 
   it("counts with the very same filter the list uses", async () => {
     FranchiseCustomer.countDocuments.mockResolvedValue(42);
 
-    const total = await adminService.countFranchiseCustomers({ cibilStatus: "Failed" });
+    const total = await adminService.countFranchiseCustomers({ search: "rahul" });
 
     expect(total).toBe(42);
-    expect(FranchiseCustomer.countDocuments).toHaveBeenCalledWith({ "cibil.status": "Failed" });
+    expect(FranchiseCustomer.countDocuments).toHaveBeenCalledWith({
+      $or: [{ fullName: /rahul/i }, { mobile: /rahul/i }, { panNumber: /rahul/i }, { email: /rahul/i }],
+    });
   });
 
   it("returns pagination metadata from the controller", async () => {
@@ -186,7 +161,7 @@ describe("admin franchise customer list", () => {
 
   it("forwards filter validation errors to next()", async () => {
     const { response, next } = await runController(adminController.list, {
-      query: { cibilStatus: "Bogus" },
+      query: { franchise: "not-a-frn" },
     });
 
     expect(response.payload).toBeUndefined();
@@ -194,56 +169,38 @@ describe("admin franchise customer list", () => {
   });
 });
 
-describe("admin CIBIL funnel stats", () => {
+describe("admin franchise customer stats", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("sums franchise-wise rows into overall totals and joins the FRN names", async () => {
+  it("sums franchise-wise rows into an overall total and joins the FRN names", async () => {
     FranchiseCustomer.aggregate.mockResolvedValue([
-      { _id: FRN_ID, total: 3, consented: 2, notChecked: 1, checked: 2, failed: 0, eligible: 1 },
-      { _id: OTHER_FRN_ID, total: 1, consented: 1, notChecked: 0, checked: 1, failed: 0, eligible: 1 },
+      { _id: FRN_ID, total: 3 },
+      { _id: OTHER_FRN_ID, total: 1 },
     ]);
     Franchise.find.mockReturnValue({ select: jest.fn().mockResolvedValue([ownerFranchise]) });
 
-    const stats = await adminService.franchiseCibilStats();
+    const stats = await adminService.franchiseCustomerStats();
 
-    expect(stats.threshold).toBe(650);
-    expect(stats).toMatchObject({
-      total: 4,
-      consented: 3,
-      notChecked: 1,
-      checked: 3,
-      failed: 0,
-      eligible: 2,
-      locked: 2,
-      checkedLocked: 1,
-    });
-    expect(stats.byStatus).toEqual({ NotChecked: 1, Checked: 3, Failed: 0 });
-
+    expect(stats.total).toBe(4);
     expect(stats.byFranchise).toHaveLength(2);
     expect(stats.byFranchise[0]).toMatchObject({
       franchise: { franchiseId: "FRN000001" },
       total: 3,
-      eligible: 1,
-      locked: 2,
-      checkedLocked: 1,
     });
-    // Dusra franchise doc nahi mila (delete ho gaya) — row phir bhi dikhti hai.
+    // Doosra franchise doc nahi mila (delete ho gaya) — row phir bhi dikhti hai.
     expect(stats.byFranchise[1].franchise).toBeNull();
 
-    // Eligibility rule aggregation me hi lagta hai (threshold ke saath).
+    // Count aggregation me hi lagta hai.
     const group = FranchiseCustomer.aggregate.mock.calls[0][0][0].$group;
-    expect(group.eligible).toEqual({ $sum: { $cond: [expect.any(Object), 1, 0] } });
     expect(group.total).toEqual({ $sum: 1 });
   });
 
   it("returns zeros when no franchise has customers yet", async () => {
     FranchiseCustomer.aggregate.mockResolvedValue([]);
 
-    const stats = await adminService.franchiseCibilStats();
+    const stats = await adminService.franchiseCustomerStats();
 
     expect(stats.total).toBe(0);
-    expect(stats.eligible).toBe(0);
-    expect(stats.locked).toBe(0);
     expect(stats.byFranchise).toEqual([]);
     expect(Franchise.find).not.toHaveBeenCalled();
   });
@@ -266,11 +223,11 @@ const loanDoc = (overrides = {}) => ({
   ...overrides,
 });
 
-describe("admin customer detail (CIBIL + owner + loans)", () => {
+describe("admin customer detail (owner + loans)", () => {
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => jest.restoreAllMocks());
 
-  it("returns the customer's CIBIL state, the owning franchise and the same loan status view", async () => {
+  it("returns the customer, the owning franchise and the same loan status view", async () => {
     FranchiseCustomer.findById.mockResolvedValue(customerDoc());
     FranchiseCustomer.findOne.mockResolvedValue(customerDoc());
     Franchise.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(ownerFranchise) });
@@ -284,11 +241,8 @@ describe("admin customer detail (CIBIL + owner + loans)", () => {
     const result = await adminService.getFranchiseCustomer(FC_ID);
 
     expect(Franchise.findById).toHaveBeenCalledWith(FRN_ID);
-    expect(result.customer).toMatchObject({
-      fullName: "Rahul Sharma",
-      cibil: expect.objectContaining({ score: 720, canApplyLoan: true, locked: false }),
-      loanForm: { locked: false, canApplyLoan: true },
-    });
+    expect(result.customer).toMatchObject({ fullName: "Rahul Sharma" });
+    expect(result.customer).not.toHaveProperty("cibil");
     expect(result.franchise).toMatchObject({ franchiseId: "FRN000001", name: "Amit" });
 
     // Loans usi franchise + usi customer par scoped.
@@ -325,6 +279,6 @@ describe("admin customer detail (CIBIL + owner + loans)", () => {
       franchise: { franchiseId: "FRN000001" },
       loans: { total: 0, byStatus: { Submitted: 0, Pending: 0, Approved: 0, Rejected: 0 } },
     });
-    expect(response.payload.customer.cibil.score).toBe(720);
+    expect(response.payload.customer.fullName).toBe("Rahul Sharma");
   });
 });

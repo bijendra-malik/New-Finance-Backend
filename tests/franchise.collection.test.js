@@ -156,7 +156,7 @@ describe("register routes each role into its own collection", () => {
   });
 });
 
-describe("franchise login + loan apply use the franchises collection", () => {
+describe("franchise login reads the franchises collection", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("login reads the franchise by FRN and mints a token with the FRN claim", async () => {
@@ -200,25 +200,6 @@ describe("franchise login + loan apply use the franchises collection", () => {
       /not approved yet/i
     );
   });
-
-  it("requires a registered franchise customer (CIBIL gate) before any loan apply", async () => {
-    await expect(
-      franchiseService.createFranchiseLoan(
-        { _id: "frn-id", franchiseId: "FRN000001" },
-        {
-          product: "personal",
-          loanAmount: 100000,
-          loanTenure: 2,
-          employmentType: "Salaried",
-          companyName: "ABC Corp",
-          companyType: "Private Limited",
-          monthlySalary: 40000,
-          salaryReceivedAs: "Bank Transfer",
-          salaryBankName: "HDFC",
-        }
-      )
-    ).rejects.toThrow(/franchiseCustomerId is required/i);
-  });
 });
 
 describe("admin franchise management reads the franchises collection", () => {
@@ -235,7 +216,7 @@ describe("admin franchise management reads the franchises collection", () => {
     expect(result).toEqual([]);
   });
 
-  it("approving mints the FRN code and stores the mobile as a bcrypt password", async () => {
+  it("approving mints the FRN code and stores the PAN as a bcrypt password", async () => {
     const franchise = {
       _id: new mongoose.Types.ObjectId(),
       name: "Amit",
@@ -255,7 +236,7 @@ describe("admin franchise management reads the franchises collection", () => {
     expect(approved.franchiseId).toMatch(/^FRN\d{6}$/);
     expect(approved.franchiseStatus).toBe("Approved");
     expect(franchise.password).toMatch(/^\$2/);
-    expect(await bcrypt.compare("9876543210", franchise.password)).toBe(true);
+    expect(await bcrypt.compare("ABCDE1234F", franchise.password)).toBe(true);
     expect(franchise.save).toHaveBeenCalled();
 
     // Hash kabhi response me nahi jaata.
