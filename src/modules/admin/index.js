@@ -28,7 +28,7 @@ router.use("/customers", adminAuth, require("./customer.routes"));
 
 router.use("/franchises", adminAuth, require("./franchise.routes"));
 
-/* Franchise ke customers + unka CIBIL data (read-only admin view). */
+/* Franchise ke customers ka poora network view (read-only admin view). */
 router.use("/franchise-customers", adminAuth, require("./franchiseCustomer.routes"));
 
 module.exports = router;

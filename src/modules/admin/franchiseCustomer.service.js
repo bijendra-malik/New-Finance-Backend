@@ -7,28 +7,22 @@ const {
   serializeCustomer,
   listCustomerLoans,
 } = require("../franchise/franchiseCustomer.service");
-const {
-  CIBIL_STATUS,
-  CIBIL_STATUS_VALUES,
-  cibilScoreThreshold,
-} = require("../../constants/cibil");
 
 /*
 ==========================================
-Admin view: franchise ke customers + unka CIBIL data.
+Admin view: franchise ke customers.
 
-Franchise apne customers ko apni hi screen par dekhta hai; admin ko poore
-network ka view chahiye:
+Franchise apne customers ko apni hi screen par dekhta hai; admin ko poore network
+ka view chahiye:
 
   listFranchiseCustomers   GET /api/admin/franchise-customers
-                           (?search=&franchise=&cibilStatus=&locked=&page=&limit=)
-  franchiseCibilStats      GET /api/admin/franchise-customers/stats
+                           (?search=&franchise=&page=&limit=)
+  franchiseCustomerStats   GET /api/admin/franchise-customers/stats
   getFranchiseCustomer     GET /api/admin/franchise-customers/:id
 
-List/detail wahi `serializeCustomer` shape deta hai jo franchise ko milta hai
-(cibil eligibility + loanForm lock state), upar owner franchise ka naam/FRN
-code aur har customer ke loans ka count. Admin read-only hai — CIBIL check
-yahan se nahi chalta, sirf report dekhi jaati hai.
+List/detail wahi customer shape deta hai jo franchise ko milta hai, upar owner
+franchise ka naam/FRN code aur har customer ke loans ka count. Admin read-only
+hai — yahan se na customer banta hai na loan file hota hai.
 ==========================================
 */
 
@@ -48,26 +42,6 @@ const clean = (value) => String(value ?? "").trim();
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /*
-Eligibility ka rule exact wahi jo franchise-side `buildEligibility` chalata hai,
-par Mongo expression me — list filter (locked=true|false) aur stats (eligible
-count) dono isi ko use karte hain, taaki kahin aur logic duplicate na ho:
-
-  Checked + score >= threshold + report valid (ya expiry null) = eligible.
-*/
-const eligibleExpr = (threshold, now) => ({
-  $and: [
-    { $eq: ["$cibil.status", CIBIL_STATUS.CHECKED] },
-    { $gte: [{ $ifNull: ["$cibil.score", -1] }, threshold] },
-    {
-      $or: [
-        { $eq: [{ $ifNull: ["$cibil.expiresAt", null] }, null] },
-        { $gte: ["$cibil.expiresAt", now] },
-      ],
-    },
-  ],
-});
-
-/*
 `franchise` query param: FRN code (FRN000001) ya franchise ObjectId — dono
 chalte hain taaki list screen dono jagah se filter kare.
 */
@@ -85,7 +59,7 @@ const applyOwnerFilter = (filter, value) => {
   }
 };
 
-const buildFilter = ({ search, franchise, cibilStatus, locked } = {}) => {
+const buildFilter = ({ search, franchise } = {}) => {
   const filter = {};
 
   applyOwnerFilter(filter, franchise);
@@ -94,27 +68,6 @@ const buildFilter = ({ search, franchise, cibilStatus, locked } = {}) => {
   if (q) {
     const regex = new RegExp(escapeRegex(q), "i");
     filter.$or = [{ fullName: regex }, { mobile: regex }, { panNumber: regex }, { email: regex }];
-  }
-
-  const wantedStatus = clean(cibilStatus);
-  if (wantedStatus) {
-    if (!CIBIL_STATUS_VALUES.includes(wantedStatus)) {
-      throw badRequest(`cibilStatus must be one of: ${CIBIL_STATUS_VALUES.join(", ")}`);
-    }
-    filter["cibil.status"] = wantedStatus;
-  }
-
-  /*
-  `locked` derived state par filter karta hai (report expiry bhi count hoti hai),
-  isliye $expr me wahi eligibility rule chalata hai — pagination ke baad JS me
-  filter karne ke bajaye query level par, taaki total bhi sahi aaye.
-  */
-  const wantedLocked = clean(locked);
-  if (wantedLocked === "true" || wantedLocked === "false") {
-    const eligible = eligibleExpr(cibilScoreThreshold(), new Date());
-    filter.$expr = wantedLocked === "true" ? { $not: [eligible] } : eligible;
-  } else if (wantedLocked !== "") {
-    throw badRequest("locked must be true or false");
   }
 
   return filter;
@@ -217,9 +170,8 @@ const countFranchiseCustomers = async (query = {}) =>
   FranchiseCustomer.countDocuments(buildFilter(query));
 
 /*
-Ek customer ka poora detail: customer (CIBIL eligibility ke saath), owner
-franchise ka summary, aur usi ke loans ka wahi grouped status view jo franchise
-apne dashboard par dekhta hai.
+Ek customer ka poora detail: customer, owner franchise ka summary, aur usi ke
+loans ka wahi grouped status view jo franchise apne dashboard par dekhta hai.
 */
 const getFranchiseCustomer = async (id) => {
   if (!mongoose.isValidObjectId(id)) throw notFound("Franchise customer not found");
@@ -251,35 +203,13 @@ const getFranchiseCustomer = async (id) => {
 /* -------------------------------------------------------------- stats -- */
 
 /*
-Poore network ka CIBIL funnel — ek aggregation, franchise-wise rows jo upar
-sum ho kar overall banate hain:
-
-  total / consented / notChecked / checked / failed
-  eligible        -> form khula hai (score >= threshold + report valid)
-  locked          -> total - eligible
-  checkedLocked   -> check to ho gaya par low score/expired hone se lock
+Poore network ka customer count — franchise-wise rows jo upar sum ho kar overall
+`total` banate hain. Admin ko ek nazar me dikhta hai kis franchise ne kitne
+customers register kiye.
 */
-const franchiseCibilStats = async () => {
-  const threshold = cibilScoreThreshold();
-  const now = new Date();
-  const eligible = eligibleExpr(threshold, now);
-
+const franchiseCustomerStats = async () => {
   const rows = await FranchiseCustomer.aggregate([
-    {
-      $group: {
-        _id: "$franchise",
-        total: { $sum: 1 },
-        consented: {
-          $sum: {
-            $cond: [{ $ne: [{ $ifNull: ["$cibilConsentAt", null] }, null] }, 1, 0],
-          },
-        },
-        notChecked: { $sum: { $cond: [{ $eq: ["$cibil.status", CIBIL_STATUS.NOT_CHECKED] }, 1, 0] } },
-        checked: { $sum: { $cond: [{ $eq: ["$cibil.status", CIBIL_STATUS.CHECKED] }, 1, 0] } },
-        failed: { $sum: { $cond: [{ $eq: ["$cibil.status", CIBIL_STATUS.FAILED] }, 1, 0] } },
-        eligible: { $sum: { $cond: [eligible, 1, 0] } },
-      },
-    },
+    { $group: { _id: "$franchise", total: { $sum: 1 } } },
     { $sort: { total: -1 } },
   ]);
 
@@ -291,9 +221,6 @@ const franchiseCibilStats = async () => {
 
   const byFranchise = rows.map((row) => {
     const owner = row._id ? byId.get(String(row._id)) : null;
-    const total = row.total || 0;
-    const checked = row.checked || 0;
-    const eligibleCount = row.eligible || 0;
 
     return {
       franchise: owner
@@ -304,43 +231,13 @@ const franchiseCibilStats = async () => {
             franchiseStatus: owner.franchiseStatus,
           }
         : null,
-      total,
-      consented: row.consented || 0,
-      notChecked: row.notChecked || 0,
-      checked,
-      failed: row.failed || 0,
-      eligible: eligibleCount,
-      locked: total - eligibleCount,
-      // Check ho gaya par phir bhi lock (low score ya report expired).
-      checkedLocked: checked - eligibleCount,
+      total: row.total || 0,
     };
   });
 
-  const totals = byFranchise.reduce(
-    (acc, row) => {
-      acc.total += row.total;
-      acc.consented += row.consented;
-      acc.notChecked += row.notChecked;
-      acc.checked += row.checked;
-      acc.failed += row.failed;
-      acc.eligible += row.eligible;
-      acc.locked += row.locked;
-      acc.checkedLocked += row.checkedLocked;
-      return acc;
-    },
-    { total: 0, consented: 0, notChecked: 0, checked: 0, failed: 0, eligible: 0, locked: 0, checkedLocked: 0 }
-  );
+  const total = byFranchise.reduce((sum, row) => sum + row.total, 0);
 
-  return {
-    threshold,
-    ...totals,
-    byStatus: {
-      [CIBIL_STATUS.NOT_CHECKED]: totals.notChecked,
-      [CIBIL_STATUS.CHECKED]: totals.checked,
-      [CIBIL_STATUS.FAILED]: totals.failed,
-    },
-    byFranchise,
-  };
+  return { total, byFranchise };
 };
 
 module.exports = {
@@ -348,5 +245,5 @@ module.exports = {
   listFranchiseCustomers,
   countFranchiseCustomers,
   getFranchiseCustomer,
-  franchiseCibilStats,
+  franchiseCustomerStats,
 };

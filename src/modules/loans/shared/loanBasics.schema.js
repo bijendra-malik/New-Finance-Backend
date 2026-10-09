@@ -24,7 +24,7 @@ const SERVER_MANAGED_FIELD_NAMES = [
   "franchiseCode",
   // Human-readable per-application id (LOAN000001).
   "applicationNo",
-  // Franchise ke apne customer ka record (CIBIL gate wala) — body se nahi aata.
+  // Franchise ke apne customer ka record — body se nahi aata, server set karta hai.
   "franchiseCustomer",
 ];
 
@@ -55,8 +55,8 @@ const FRANCHISE_FIELDS = {
   franchiseCode: { type: String, default: null },
   applicationNo: { type: String, default: null },
   /*
-  Franchise ka apna customer (franchisecustomers collection) — jiska CIBIL check
-  pass hone ke baad hi form khula tha. Direct customer application me null.
+  Franchise ka apna customer (franchisecustomers collection) — uske naam par loan
+  file hua tha. Direct customer application me null.
   */
   franchiseCustomer: { type: mongoose.Schema.Types.ObjectId, ref: "FranchiseCustomer", default: null },
 };

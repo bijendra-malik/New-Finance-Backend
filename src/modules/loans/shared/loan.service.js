@@ -166,7 +166,7 @@ const buildLoanDocument = (productKey, body, userId, options = {}) => {
   if (options.franchise) data.franchise = options.franchise;
   if (options.franchiseCode) data.franchiseCode = options.franchiseCode;
   if (options.applicationNo) data.applicationNo = options.applicationNo;
-  // Franchise ka apna customer (CIBIL gate) — direct application me nahi hota.
+  // Franchise ka apna customer record — direct customer application me nahi hota.
   if (options.franchiseCustomer) data.franchiseCustomer = options.franchiseCustomer;
 
   dataFieldNames(config, employmentType).forEach((field) => {
@@ -248,11 +248,12 @@ const createLoanController = (productKey) => {
     apply: async (req, res, next) => {
       try {
         // Customer product routes are for customer tokens only; a franchise
-        // must use POST /api/franchise/loan-apply so the channel is recorded.
+        // must apply through its own customer route so the channel is recorded.
         if (req.user && req.user.role === USER_ROLE.FRANCHISE) {
           return res.status(403).json({
             success: false,
-            message: "Franchise accounts must apply through POST /api/franchise/loan-apply",
+            message:
+              "Franchise accounts must apply through POST /api/franchise/customer/:product/applyloan",
           });
         }
 

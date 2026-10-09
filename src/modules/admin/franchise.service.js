@@ -19,9 +19,8 @@ Admin franchise endpoints.
   rejectFranchise     PATCH  /api/admin/franchises/:id/reject
   listFranchiseLoans  GET    /api/admin/franchises/:id/loans
 
-Approving mints the FRN code AND sets the initial password (the franchise's
-registered mobile number, hashed) so the partner can log in with
-franchiseId + mobile number as the password.
+Approving mints the FRN code AND sets the initial password (the franchise's PAN
+number, hashed) so the partner can log in with franchiseId + PAN as the password.
 ==========================================
 */
 
@@ -48,10 +47,10 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$
 /*
 The login details the admin hands to the franchise partner.
 
-Approving mints the FRN code and stores a bcrypt hash of the franchise's
-registered mobile number; that mobile is the first password. This block is
-therefore built from the two public fields the admin already sees — never from
-the stored hash. Returns null while the application is Pending/Rejected.
+Approving mints the FRN code and stores a bcrypt hash of the franchise's PAN
+number; that PAN is the first password. This block is therefore rebuilt from the
+public fields the admin already sees — never from the stored hash. Returns null
+while the application is Pending/Rejected (no FRN code yet).
 */
 const buildCredentials = (franchise) => {
   if (!franchise) return null;
@@ -61,13 +60,23 @@ const buildCredentials = (franchise) => {
 
   return {
     loginId,
-    password: franchise.mobile || null,
-    passwordIsMobile: true,
-    note: "Share these with the franchise partner. The password is the registered mobile number.",
+    password: franchise.panNumber || null,
+    passwordIsPan: true,
+    note: "Share these with the franchise partner. The password is the PAN number submitted with the application.",
   };
 };
 
-/* The PAN password hash is server-side only — never echo it back in a response. */
+/*
+Initial password rule (one place, so approve + reset can never drift):
+
+  password = the franchise's PAN number, uppercase, bcrypt-hashed.
+
+The plain PAN is never stored — only this hash.
+*/
+const hashPanPassword = (franchise) =>
+  bcrypt.hash(String(franchise.panNumber).trim().toUpperCase(), 10);
+
+/* The password hash is server-side only — never echo it back in a response. */
 const withoutPassword = (franchise) => {
   const safe = franchise.toObject();
   delete safe.password;
@@ -136,10 +145,10 @@ const approveFranchise = async (id) => {
     throw badRequest("This application is incomplete — the franchise must submit its details first");
   }
 
-  // Mint the public FRN code and set the initial password: the registered
-  // mobile number, hashed. The partner logs in with FRN + phone number.
+  // Mint the public FRN code and set the initial password from the PAN number
+  // (hashed). The partner logs in with FRN + PAN.
   franchise.franchiseId = await nextFranchiseCode();
-  franchise.password = await bcrypt.hash(String(franchise.mobile), 10);
+  franchise.password = await hashPanPassword(franchise);
   franchise.franchiseStatus = FRANCHISE_STATUS.APPROVED;
   franchise.franchiseApprovedAt = new Date();
   franchise.franchiseRejectedAt = null;
@@ -173,9 +182,9 @@ const rejectFranchise = async (id, note) => {
 /*
 Re-issue the login password for an already-approved franchise.
 
-Franchises approved before the mobile-password rule have the PAN hashed as
-their password, so their phone number does not work. This rebuilds the hash
-from the registered mobile while keeping the FRN code and approval intact.
+Franchises approved before the PAN-password rule have their mobile number
+hashed as the password, so the PAN does not work. This rebuilds the hash from
+the PAN while keeping the FRN code and approval status intact.
 */
 const resetFranchisePassword = async (id) => {
   const franchise = await getFranchiseById(id);
@@ -184,7 +193,11 @@ const resetFranchisePassword = async (id) => {
     throw badRequest("Only an approved franchise has login credentials to reset");
   }
 
-  franchise.password = await bcrypt.hash(String(franchise.mobile), 10);
+  if (!franchise.panNumber) {
+    throw badRequest("This franchise has no PAN number on file, so a password cannot be reset");
+  }
+
+  franchise.password = await hashPanPassword(franchise);
   await franchise.save();
 
   return withoutPassword(franchise);

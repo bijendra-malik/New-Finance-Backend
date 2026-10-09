@@ -7,21 +7,19 @@ Admin franchise-customer controllers (read-only).
 */
 
 /*
-List Franchise Customers (sare franchises, unka CIBIL state)
+List Franchise Customers (sare franchises ke customers)
 GET /api/admin/franchise-customers
-    ?search=&franchise=&cibilStatus=&locked=&page=&limit=
+    ?search=&franchise=&page=&limit=
 
-  franchise     -> FRN code (FRN000001) ya franchise id
-  cibilStatus   -> NotChecked | Checked | Failed
-  locked        -> true | false (derived eligibility state)
+  franchise -> FRN code (FRN000001) ya franchise id
 */
 exports.list = async (req, res, next) => {
   try {
-    const { search, franchise, cibilStatus, locked, page, limit } = req.query;
+    const { search, franchise, page, limit } = req.query;
 
     const [customers, total] = await Promise.all([
-      service.listFranchiseCustomers({ search, franchise, cibilStatus, locked, page, limit }),
-      service.countFranchiseCustomers({ search, franchise, cibilStatus, locked }),
+      service.listFranchiseCustomers({ search, franchise, page, limit }),
+      service.countFranchiseCustomers({ search, franchise }),
     ]);
 
     const pageNumber = Math.max(Number(page) || 1, 1);
@@ -41,19 +39,19 @@ exports.list = async (req, res, next) => {
 };
 
 /*
-Network-wide CIBIL funnel (franchise-wise)
+Network-wide customer count (franchise-wise)
 GET /api/admin/franchise-customers/stats
 */
 exports.stats = async (req, res, next) => {
   try {
-    res.json({ success: true, stats: await service.franchiseCibilStats() });
+    res.json({ success: true, stats: await service.franchiseCustomerStats() });
   } catch (error) {
     next(error);
   }
 };
 
 /*
-One franchise customer — CIBIL data + owner franchise + uske loans ka status view
+One franchise customer — details + owner franchise + uske loans ka status view
 GET /api/admin/franchise-customers/:id
 */
 exports.getOne = async (req, res, next) => {
