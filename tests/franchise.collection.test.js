@@ -200,6 +200,120 @@ describe("franchise login reads the franchises collection", () => {
       /not approved yet/i
     );
   });
+
+  /*
+  Ye flow KISI BHI mobile ke liye generic hai — test kisi fixed number par lock
+  nahi hai. Har run par naye random 10-digit numbers bante hain, aur register /
+  login usi number par hota hai (jaise real user apne mobile number se karta hai).
+  OTP hamesha STATIC_OTP = 123456 rehta hai (badalta nahi).
+  */
+  const randomMobile = () =>
+    `9${String(Math.floor(Math.random() * 1_000_000_000)).padStart(9, "0")}`;
+  const ANY_MOBILES = [randomMobile(), randomMobile(), randomMobile()];
+
+  describe("mobile-OTP flow is generic for any registered mobile (STATIC_OTP 123456)", () => {
+    const PREVIOUS_STATIC_OTP = process.env.STATIC_OTP;
+
+    beforeAll(() => {
+      process.env.STATIC_OTP = "123456";
+    });
+
+    afterAll(() => {
+      if (PREVIOUS_STATIC_OTP === undefined) delete process.env.STATIC_OTP;
+      else process.env.STATIC_OTP = PREVIOUS_STATIC_OTP;
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      OTP.deleteMany.mockResolvedValue({});
+      OTP.create.mockResolvedValue({});
+    });
+
+    it.each(ANY_MOBILES)(
+      "login for %s ignores the legacy users doc and mails OTP 123456 to the franchise",
+      async (mobile) => {
+        // Migration se pehle ka leftover: `users` me role Franchise, isVerified false.
+        // Pehle ye doc login ko "Account not verified" de deta tha.
+        User.findOne.mockResolvedValue({
+          _id: "stale-user-id",
+          mobile,
+          role: USER_ROLE.FRANCHISE,
+          isVerified: false,
+        });
+        Franchise.findOne.mockResolvedValue({
+          _id: "frn-id",
+          mobile,
+          role: USER_ROLE.FRANCHISE,
+          franchiseId: "FRN000003",
+          franchiseStatus: "Approved",
+          isVerified: true,
+        });
+
+        const { response, next } = await runController(authController.login, { mobile });
+
+        expect(next).not.toHaveBeenCalled();
+        expect(response.payload.success).toBe(true);
+        expect(Franchise.findOne).toHaveBeenCalledWith({ mobile });
+        expect(OTP.create).toHaveBeenCalledWith(
+          expect.objectContaining({ mobile, otp: "123456", role: USER_ROLE.FRANCHISE })
+        );
+        // Asli franchise pehle mil gayi — stale users doc chhua bhi nahi gaya.
+        expect(User.findOne).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(ANY_MOBILES)(
+      "register for %s is not blocked by the legacy users doc and issues OTP 123456",
+      async (mobile) => {
+        // Legacy doc `users` me pada hai, par franchise registration use ignore
+        // karti hai — isliye conflict filter ({ role: { $ne: "Franchise" } }) par null.
+        User.findOne.mockImplementation((query) =>
+          Promise.resolve(
+            query?.role ? null : { _id: "stale-user-id", mobile, role: USER_ROLE.FRANCHISE, isVerified: false }
+          )
+        );
+        Franchise.findOne.mockResolvedValue(null);
+        Franchise.create.mockResolvedValue({});
+
+        const { response, next } = await runController(authController.register, {
+          role: USER_ROLE.FRANCHISE,
+          continent: "Asia",
+          country: "India",
+          name: "Any Franchise",
+          mobile,
+          email: `fr.${mobile}@example.com`,
+        });
+
+        expect(next).not.toHaveBeenCalled();
+        expect(response.payload.success).toBe(true);
+        expect(OTP.create).toHaveBeenCalledWith(
+          expect.objectContaining({ mobile, otp: "123456", role: USER_ROLE.FRANCHISE })
+        );
+      }
+    );
+
+    it.each(ANY_MOBILES)(
+      "login for %s on an unverified account resends a verification OTP (no dead-end)",
+      async (mobile) => {
+        // Register ke baad verify adhoora (isVerified false) — login ab 400 nahi
+        // deta, balki fresh OTP bhejkar needsVerification batata hai.
+        Franchise.findOne.mockResolvedValue({
+          _id: "frn-id",
+          mobile,
+          role: USER_ROLE.FRANCHISE,
+          isVerified: false,
+        });
+
+        const { response, next } = await runController(authController.login, { mobile });
+
+        expect(next).not.toHaveBeenCalled();
+        expect(response.payload).toMatchObject({ success: true, needsVerification: true });
+        expect(OTP.create).toHaveBeenCalledWith(
+          expect.objectContaining({ mobile, otp: "123456", role: USER_ROLE.FRANCHISE })
+        );
+      }
+    );
+  });
 });
 
 describe("admin franchise management reads the franchises collection", () => {

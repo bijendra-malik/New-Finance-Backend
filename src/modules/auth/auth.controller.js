@@ -59,12 +59,20 @@ const findAccountForMobile = async (mobile, roleHint = "") => {
     if (account) return { account, Model: modelForRole(roleHint) };
   }
 
-  // Legacy OTP (role nahi hai) — dono collections check karo.
-  const customer = await User.findOne({ mobile });
-  if (customer) return { account: customer, Model: User };
+  /*
+  Role hint nahi hai (login / purana OTP) — to `franchises` PEHLE dekho.
 
+  Kyun: migration se pehle ke franchise documents `users` collection me pade ho
+  sakte hain. Pehle `users` dekhne par wahi purana (unverified) doc mil jaata tha
+  aur asli franchise kabhi check hi nahi hoti thi — login "Account not verified"
+  de deta tha. Naye franchise accounts hamesha `franchises` me bante hain, isliye
+  franchise-first order sahi hai; koi asli customer `franchises` me nahi hota.
+  */
   const franchise = await Franchise.findOne({ mobile });
   if (franchise) return { account: franchise, Model: Franchise };
+
+  const customer = await User.findOne({ mobile });
+  if (customer) return { account: customer, Model: User };
 
   return { account: null, Model: null };
 };
@@ -76,13 +84,23 @@ const findAccountForMobile = async (mobile, roleHint = "") => {
 const conflictInOtherCollection = async (Model, { mobile, email }) => {
   const Other = otherModelFor(Model);
 
-  const sameMobile = await Other.findOne({ mobile });
+  /*
+  Jab doosri collection `users` hai (yaani franchise register ho rahi hai) to
+  usme pade PURANE franchise documents ko ignore karo. Warna migration se pehle
+  ka ek leftover doc franchise registration ko galat "already registered as a
+  customer" message ke saath block kar deta tha.
+  Customer registration par ye filter lagta hi nahi (Other = franchises), isliye
+  asli franchise ke mobile par customer banne ka guard jaisa tha waisa rehta hai.
+  */
+  const notLegacyFranchise = Other === User ? { role: { $ne: USER_ROLE.FRANCHISE } } : {};
+
+  const sameMobile = await Other.findOne({ mobile, ...notLegacyFranchise });
   if (sameMobile) {
     return `This mobile is already registered as a ${roleLabel(Other)}. Please use another mobile number or login instead.`;
   }
 
   if (email) {
-    const sameEmail = await Other.findOne({ email: String(email).toLowerCase() });
+    const sameEmail = await Other.findOne({ email: String(email).toLowerCase(), ...notLegacyFranchise });
     if (sameEmail) {
       return `This email is already registered as a ${roleLabel(Other)}. Please use another email address.`;
     }
@@ -288,13 +306,6 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    if (!account.isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "Account not verified. Please complete registration OTP verification first.",
-      });
-    }
-
     const otp = process.env.STATIC_OTP || Math.floor(100000 + Math.random() * 900000).toString();
 
     await OTP.deleteMany({ mobile });
@@ -311,6 +322,22 @@ exports.login = async (req, res, next) => {
       return res.status(500).json({
         success: false,
         message: "Unable to send OTP. Please try again later.",
+      });
+    }
+
+    /*
+    Register ke baad OTP verification adhoora reh gaya (ya OTP 5 min me expire
+    ho gaya). Pehle login yahan 400 "Account not verified" dekar dead-end ban
+    jaata tha, isliye user register hone ke baad bhi login nahi kar paata tha.
+    Ab wahi verification OTP dobara bhej diya jaata hai — client ise verify-otp /
+    login-verify se complete karke aage badh sakta hai.
+    */
+    if (!account.isVerified) {
+      return res.json({
+        success: true,
+        needsVerification: true,
+        message:
+          "Account is not verified yet. A fresh OTP has been sent — please verify your mobile number to continue.",
       });
     }
 
