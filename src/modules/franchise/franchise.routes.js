@@ -1,6 +1,7 @@
 const router = require("express").Router();
 
 const franchiseController = require("./franchise.controller");
+const franchisePlanController = require("./franchisePlan.controller");
 const auth = require("../../middleware/auth.middleware");
 const {
   requireFranchise,
@@ -17,6 +18,7 @@ const {
 ========================================
 Franchise API — mounted at /api/franchise
 
+  GET  /plans        published investment plans             (public)
   POST /login        franchiseId + password -> JWT          (public)
   GET  /profile      registration + status  (franchise token)
   POST /apply        franchise application  (franchise token)
@@ -33,6 +35,13 @@ Franchise ke apne CUSTOMERS aur unke loans alag router me hain:
 */
 
 // Public
+/*
+Franchise investment plans. Ye published price list hai — koi PII nahi,
+isliye bina login ke bhi khulti hai taaki naya visitor plans dekh kar
+apply kar sake. Admin inhe /api/admin/franchise-plans se manage karta hai.
+*/
+router.get("/plans", franchisePlanController.list);
+
 router.post("/login", adminLoginLimiter, franchiseLoginValidator, franchiseController.login);
 
 // Franchise ka apna customer — register + loan apply

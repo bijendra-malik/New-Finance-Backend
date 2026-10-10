@@ -16,8 +16,16 @@ const franchiseLoginValidator = [
 ];
 
 /*
-`panNumber` is checked here only for presence/format; the state/city/package
+`panNumber` is checked here only for presence/format; the state/city/plan
 presence checks live in the service so the same error shape is reused.
+
+Plan ab do tarah se aa sakta hai:
+
+  planCode -> published plan ka code ("3Y")   <- naya frontend: GET /api/franchise/plans
+  package  -> free-text package name          <- purana client (backward compat)
+
+Kam se kam ek bhejna zaroori hai. Dono na hon to yahin 400 mil jaata hai,
+warna service me pahunche bina plan hi select nahi hua hota.
 */
 const franchiseApplyValidator = [
   body("panNumber")
@@ -27,7 +35,21 @@ const franchiseApplyValidator = [
     .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
   body("state").trim().notEmpty().withMessage("State is required"),
   body("city").trim().notEmpty().withMessage("City is required"),
-  body("package").trim().notEmpty().withMessage("Package is required"),
+  body("planCode")
+    .trim()
+    .custom((value, { req }) => {
+      const code = String(value ?? "").trim();
+      const pkg = String(req.body?.package ?? "").trim();
+
+      if (!code && !pkg) {
+        throw new Error("Please select a franchise plan before applying");
+      }
+      if (code && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$/.test(code)) {
+        throw new Error("Enter a valid franchise plan code (e.g. 3Y)");
+      }
+      return true;
+    }),
+  body("package").optional().trim(),
   handleValidationErrors,
 ];
 

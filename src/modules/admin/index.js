@@ -28,6 +28,13 @@ router.use("/customers", adminAuth, require("./customer.routes"));
 
 router.use("/franchises", adminAuth, require("./franchise.routes"));
 
+/*
+Franchise investment plans — admin yahan fee / validity / renewal edit karta
+hai, aur wahi data /franchise page par public GET /api/franchise/plans se
+jaata hai. "/franchises" se alag prefix hai, isliye order ka issue nahi.
+*/
+router.use("/franchise-plans", adminAuth, require("./franchisePlan.routes"));
+
 /* Franchise ke customers ka poora network view (read-only admin view). */
 router.use("/franchise-customers", adminAuth, require("./franchiseCustomer.routes"));
 

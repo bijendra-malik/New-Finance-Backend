@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const User = require("../auth/user.model");
 const Franchise = require("./franchise.model");
 const FranchiseCustomer = require("./franchiseCustomer.model");
+const franchisePlanService = require("./franchisePlan.service");
 const generateToken = require("../../utils/generateToken");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS } = require("../loans/shared/loanModels");
@@ -92,11 +93,22 @@ const applyFranchise = async (userId, body = {}) => {
 
   const state = cleanText(payload.state);
   const city = cleanText(payload.city);
+  const planCode = cleanText(payload.planCode);
+  // Purana free-text package — backward compat ke liye abhi bhi accept karte hain.
   const pkg = cleanText(payload.package);
 
   if (!state) throw badRequest("State is required");
   if (!city) throw badRequest("City is required");
-  if (!pkg) throw badRequest("Package is required");
+  if (!planCode && !pkg) throw badRequest("Please select a franchise plan before applying");
+
+  /*
+  planCode bheja ho to plan ka SNAPSHOT banate hain (sirf id store nahi karte).
+  Sirf ACTIVE plan chalta hai — deactivate kiya hua plan naye application me
+  nahi aa sakta.
+  */
+  const planSnapshot = planCode
+    ? franchisePlanService.buildPlanSnapshot(await franchisePlanService.resolveActivePlan(planCode))
+    : null;
 
   // Optional business profile — stored as-is for the admin to review.
   const businessDetails = {
@@ -111,7 +123,10 @@ const applyFranchise = async (userId, body = {}) => {
   franchise.state = state;
   franchise.city = city;
   franchise.pincode = cleanText(payload.pincode);
-  franchise.package = pkg;
+  franchise.plan = planSnapshot;
+  // `package` plan ke naam ke saath sync rakha jaata hai; plan na chuna ho to
+  // jo bheja gaya wahi rehta hai (purana behavior).
+  franchise.package = planSnapshot ? planSnapshot.name : pkg;
   franchise.businessDetails = businessDetails;
   franchise.franchiseStatus = FRANCHISE_STATUS.PENDING;
   franchise.franchiseAppliedAt = new Date();

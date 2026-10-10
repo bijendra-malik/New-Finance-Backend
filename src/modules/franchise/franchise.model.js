@@ -111,7 +111,42 @@ const franchiseSchema = new mongoose.Schema(
     state: { type: String, trim: true, default: "" },
     city: { type: String, trim: true, default: "" },
     pincode: { type: String, trim: true, default: "" },
+    /*
+    Purana free-text package field — ab plan ke naam ke saath sync rehta hai.
+    Isko hataate nahi kyunki purane franchise records aur clients isi ko padhte
+    hain.
+    */
     package: { type: String, trim: true, default: "" },
+
+    /*
+    Chuna hua franchise plan — SNAPSHOT, sirf id nahi.
+
+    Wajah: admin kal kisi plan ka fee badal de to bhi is partner ke record me
+    wahi price rahegi jo usne apply karte waqt dekhi thi. Sirf ObjectId
+    reference rakhne se history retroactively badal jaati hai, jo financial
+    record me galat hai (see franchisePlan.service.js -> buildPlanSnapshot).
+    */
+    plan: {
+      type: new mongoose.Schema(
+        {
+          plan: { type: mongoose.Schema.Types.ObjectId, ref: "FranchisePlan", default: null },
+          code: { type: String, trim: true, uppercase: true, default: "" },
+          name: { type: String, trim: true, default: "" },
+          durationMonths: { type: Number, default: null },
+          fee: { type: Number, default: null },
+          currency: { type: String, trim: true, default: "INR" },
+          gstPercent: { type: Number, default: null },
+          gstAmount: { type: Number, default: null },
+          totalWithGst: { type: Number, default: null },
+          renewalFee: { type: Number, default: null },
+          renewalNote: { type: String, trim: true, default: "" },
+          snapshotAt: { type: Date, default: null },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
+
     businessDetails: { type: mongoose.Schema.Types.Mixed, default: {} },
 
     franchiseAppliedAt: { type: Date, default: null },

@@ -6,6 +6,7 @@ const FRANCHISE_PROFILE_FIELDS = [
   "city",
   "pincode",
   "package",
+  "plan",
   "businessDetails",
   "franchiseAppliedAt",
   "franchiseApprovedAt",

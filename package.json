@@ -8,6 +8,7 @@
     "seed:masters": "node scripts/seedMasters.js",
     "seed:pincodes": "node scripts/seedPincodes.js",
     "seed:admin": "node scripts/seedAdmin.js",
+    "seed:franchise-plans": "node scripts/seedFranchisePlans.js",
     "import:location": "node scripts/importLocation.js",
     "test": "jest"
   },
