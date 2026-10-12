@@ -111,6 +111,24 @@ const normalizeCode = (value) => {
   return code;
 };
 
+const planCodeForDuration = (durationMonths) =>
+  durationMonths % MONTHS_IN_YEAR === 0
+    ? `${durationMonths / MONTHS_IN_YEAR}Y`
+    : `${durationMonths}M`;
+
+const nextAvailablePlanCode = async (durationMonths) => {
+  const baseCode = planCodeForDuration(durationMonths);
+  let code = baseCode;
+  let suffix = 2;
+
+  while (await FranchisePlan.exists({ code })) {
+    const suffixText = `-${suffix++}`;
+    code = `${baseCode.slice(0, 20 - suffixText.length)}${suffixText}`;
+  }
+
+  return code;
+};
+
 const normalizeName = (value) => {
   const name = cleanText(value);
   if (!name) throw badRequest("Plan name is required");
@@ -278,7 +296,12 @@ const countActivePlans = async (excludeId = null) => {
 };
 
 const createPlan = async (payload = {}, adminId = null) => {
-  const code = normalizeCode(payload.code);
+  const durationMonths = normalizeNumber(payload.durationMonths, "Duration (months)", {
+    min: 1,
+    integer: true,
+  });
+  const suppliedCode = cleanText(payload.code);
+  const code = suppliedCode ? normalizeCode(suppliedCode) : await nextAvailablePlanCode(durationMonths);
 
   const existing = await FranchisePlan.findOne({ code });
   if (existing) throw conflict(`Plan code "${code}" already exists`);
@@ -286,10 +309,7 @@ const createPlan = async (payload = {}, adminId = null) => {
   const plan = await FranchisePlan.create({
     code,
     name: normalizeName(payload.name),
-    durationMonths: normalizeNumber(payload.durationMonths, "Duration (months)", {
-      min: 1,
-      integer: true,
-    }),
+    durationMonths,
     fee: normalizeNumber(payload.fee, "Fee", { min: 0 }),
     currency: normalizeText(payload.currency, "Currency", 8) || DEFAULT_CURRENCY,
     gstPercent:
@@ -561,6 +581,8 @@ module.exports = {
   withDerivedFields,
   buildPlanView,
   durationLabel,
+  planCodeForDuration,
+  nextAvailablePlanCode,
   formatINR,
   normalizeBoolean,
   round2,

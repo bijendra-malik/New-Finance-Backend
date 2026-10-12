@@ -16,9 +16,17 @@ liye DB dekhna padta hai.
 const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$/;
 const MAX_FEATURES = 20;
 
-const codeRule = ({ required }) => {
+const codeRule = ({ required, allowBlank = false }) => {
   const chain = body("code").trim();
-  return (required ? chain.notEmpty().withMessage("Plan code is required") : chain.optional())
+  if (required) {
+    chain.notEmpty().withMessage("Plan code is required");
+  } else if (allowBlank) {
+    chain.optional({ values: "falsy" });
+  } else {
+    chain.optional();
+  }
+
+  return chain
     .toUpperCase()
     .matches(CODE_PATTERN)
     .withMessage(
@@ -99,7 +107,7 @@ const sortOrderRule = () =>
     .toInt();
 
 const createPlanValidator = [
-  codeRule({ required: true }),
+  codeRule({ required: false, allowBlank: true }),
   nameRule({ required: true }),
   durationRule({ required: true }),
   feeRule({ required: true }),

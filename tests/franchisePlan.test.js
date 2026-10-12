@@ -12,8 +12,11 @@ const {
   durationLabel,
   normalizeBoolean,
   buildPlanSnapshot,
+  planCodeForDuration,
+  nextAvailablePlanCode,
   DEFAULT_PLANS,
 } = franchisePlanService;
+const FranchisePlan = require("../src/modules/franchise/franchisePlan.model");
 
 /** Runs an express-validator chain (+ the trailing handleValidationErrors) against a fake req. */
 const runChain = (chain, body) => {
@@ -61,6 +64,23 @@ const planDoc = (overrides = {}) => ({
 });
 
 describe("franchise plan derived fields", () => {
+  it("formats automatic plan codes from their validity", () => {
+    expect(planCodeForDuration(36)).toBe("3Y");
+    expect(planCodeForDuration(24)).toBe("2Y");
+    expect(planCodeForDuration(18)).toBe("18M");
+    expect(planCodeForDuration(1)).toBe("1M");
+  });
+
+  it("adds a suffix when an automatic duration code is already in use", async () => {
+    const existsSpy = jest
+      .spyOn(FranchisePlan, "exists")
+      .mockResolvedValueOnce({ _id: "existing-plan" })
+      .mockResolvedValueOnce(null);
+
+    await expect(nextAvailablePlanCode(36)).resolves.toBe("3Y-2");
+    existsSpy.mockRestore();
+  });
+
   it("computes the GST amount and total from the base fee", () => {
     const plan = withDerivedFields(planDoc({ fee: 249000, gstPercent: 18 }));
 
@@ -245,14 +265,19 @@ describe("franchise plan admin validators", () => {
     expect(result.body.fee).toBe(189000);
   });
 
-  it("rejects a plan without a code, name, duration or fee", async () => {
-    expect((await runChain(createPlanValidator, { name: "X", durationMonths: 12, fee: 1 })).passed).toBe(
-      false
-    );
+  it("allows an omitted or blank code so the service can generate one", async () => {
+    expect(
+      (await runChain(createPlanValidator, { name: "X", durationMonths: 12, fee: 1 })).passed
+    ).toBe(true);
+    expect(
+      (await runChain(createPlanValidator, { ...validPayload, code: "" })).passed
+    ).toBe(true);
+  });
+
+  it("rejects a plan without a name, duration or fee", async () => {
     expect((await runChain(createPlanValidator, { code: "X", durationMonths: 12, fee: 1 })).passed).toBe(
       false
     );
-    expect((await runChain(createPlanValidator, { code: "X", name: "X", fee: 1 })).passed).toBe(false);
     expect((await runChain(createPlanValidator, { code: "X", name: "X", durationMonths: 12 })).passed).toBe(
       false
     );

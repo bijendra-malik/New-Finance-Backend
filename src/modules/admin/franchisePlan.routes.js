@@ -14,7 +14,7 @@ Admin franchise plan routes — mounted at /api/admin/franchise-plans
 (admin auth is applied by the parent router in src/modules/admin/index.js)
 
   GET    /                       list plans (?active=true|false)
-  POST   /                       create a plan
+  POST   /                       create a plan (code optional; generated from duration if omitted)
   GET    /:id                    one plan
   PATCH  /:id                    edit fee / validity / renewal / features / order
   PATCH  /:id/best-value         pin or unpin the "Best Value" badge
