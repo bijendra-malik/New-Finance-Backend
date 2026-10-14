@@ -55,6 +55,15 @@ const franchiseCustomerSchema = new mongoose.Schema(
     state: { type: String, trim: true, default: "" },
     city: { type: String, trim: true, default: "" },
     pincode: { type: String, trim: true, default: "" },
+
+    /*
+    Customer ne khud apne mobile par aaya OTP verify kiya hai. Details franchise
+    bharta hai, par loan ki haan customer ki hoti hai — isliye verify hone se
+    pehle uske naam par loan file nahi hota (franchise.service.js ka guard).
+    Verify hone par hi uske liye `users` account + CUST id banti hai.
+    */
+    isVerified: { type: Boolean, default: false },
+    verifiedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

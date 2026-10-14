@@ -4,7 +4,8 @@ const service = require("./franchiseCustomer.service");
 ==========================================
 Franchise customer controllers (approved franchise only).
 
-  POST   /api/franchise/customer/register            naya customer
+  POST   /api/franchise/customer/register            naya customer (+ OTP)
+  POST   /api/franchise/customer/verify-otp          customer ka OTP -> CUST id
   GET    /api/franchise/customer                    apne customers (+ pagination)
   GET    /api/franchise/customer/:id                ek customer
   PATCH  /api/franchise/customer/:id                details update
@@ -16,15 +17,37 @@ franchise.controller.js me hai — product wahan validate + save hota hai.
 ==========================================
 */
 
-/* Naya customer register — details loan application ka base banti hain. */
+/*
+Naya customer register — details loan application ka base banti hain, aur
+customer ke phone par OTP chala jaata hai.
+*/
 exports.register = async (req, res, next) => {
   try {
     const data = await service.registerCustomer(req.franchise, req.body);
 
     res.status(201).json({
       success: true,
-      message: "Customer saved. You can now apply for a loan for this customer.",
+      message: `Customer saved. An OTP has been sent to the customer's mobile (${data.mobile}) for verification.`,
+      nextStep: "verify-otp",
       data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Customer ka OTP verify — iske bina uske naam par loan file nahi hota.
+POST /api/franchise/customer/verify-otp   { franchiseCustomerId, otp }
+*/
+exports.verifyCustomerOtp = async (req, res, next) => {
+  try {
+    const result = await service.verifyCustomerOtp(req.franchise, req.body);
+
+    res.json({
+      success: true,
+      message: "Customer mobile verified successfully.",
+      ...result,
     });
   } catch (error) {
     next(error);

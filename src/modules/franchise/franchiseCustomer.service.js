@@ -4,6 +4,8 @@ const FranchiseCustomer = require("./franchiseCustomer.model");
 const Franchise = require("./franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { buildStatusView } = require("../customer/customer.service");
+const entryService = require("../auth/entry.service");
+const { USER_ROLE } = require("../../constants/roles");
 
 /*
 ==========================================
@@ -76,6 +78,14 @@ const registerCustomer = async (franchise, body = {}) => {
     throw badRequest("Enter a valid date of birth (YYYY-MM-DD)");
   }
 
+  /*
+  Email zaroori hai: verify hone par customer ke liye `users` account banta hai
+  aur us model me email required hai (aur unique bhi).
+  */
+  if (!email) {
+    throw badRequest("Customer email is required so the loan account can be created.");
+  }
+
   // Franchise apne khud ke mobile par customer register na kar sake.
   const franchiseAccount = await Franchise.findOne({ mobile });
   if (franchiseAccount) {
@@ -100,7 +110,60 @@ const registerCustomer = async (franchise, body = {}) => {
     pincode: cleanText(payload.pincode),
   });
 
+  /*
+  Customer ke phone par OTP — engine wahi hai jo normal customer entry chalata
+  hai (auth/entry.service.js). Yahan account NAHI banta: details pending rehti
+  hain, aur CUST id OTP verify hone par hi banti hai.
+  */
+  await entryService.startEntry({
+    role: USER_ROLE.CUSTOMER,
+    body: {
+      name: fullName,
+      email,
+      mobile,
+      dob,
+      panNumber,
+      // Franchise customer ke record me continent/country nahi hote.
+      continent: "",
+      country: "",
+    },
+    franchise,
+    franchiseCustomer: customer,
+  });
+
   return serializeCustomer(customer);
+};
+
+/*
+Customer ka OTP verify — yahin uske `users` account aur CUST id banti hai.
+Token franchise ko nahi di jaati (uske paas apni franchise token already hai).
+*/
+const verifyCustomerOtp = async (franchise, body = {}) => {
+  const payload = unwrap(body);
+  const customer = await getCustomerDoc(franchise, payload.franchiseCustomerId);
+
+  if (customer.isVerified) {
+    throw conflict("This customer's mobile is already verified.");
+  }
+
+  const result = await entryService.verifyEntry({
+    mobile: customer.mobile,
+    otp: payload.otp,
+    expectedRole: USER_ROLE.CUSTOMER,
+    // OTP sirf isi franchise ke isi customer ka chalta hai.
+    expectedFranchiseCustomerId: customer._id,
+    issueToken: false,
+  });
+
+  customer.isVerified = true;
+  customer.verifiedAt = new Date();
+  await customer.save();
+
+  return {
+    customer: serializeCustomer(customer),
+    customerId: result.customerId,
+    nextStep: "loan-apply",
+  };
 };
 
 /* --------------------------------------------------------------- read -- */
@@ -287,6 +350,7 @@ const getCustomerLoan = async (franchise, id, applicationNo) => {
 
 module.exports = {
   registerCustomer,
+  verifyCustomerOtp,
   listCustomers,
   getCustomer,
   getCustomerDoc,

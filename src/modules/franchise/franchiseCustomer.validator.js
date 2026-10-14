@@ -9,8 +9,9 @@ const { adultApplicantCheck } = require("../loans/shared/personalDetails.rules")
 Franchise customer validators.
 
 Register: customer ki basic details. Ye fields loan application ka base hain,
-isliye fullName + mobile + PAN + DOB mandatory hain aur applicant adult hona
-chahiye. Baaki (email/state/city/pincode) optional hain.
+isliye fullName + mobile + PAN + DOB + email mandatory hain aur applicant adult
+hona chahiye (email se hi verify par loan account banta hai). Baaki
+(state/city/pincode) optional hain.
 
 Update: saare fields optional, par jo bheji gayi value valid honi chahiye.
 ==========================================
@@ -27,7 +28,16 @@ const franchiseCustomerValidator = [
     .matches(PAN_PATTERN)
     .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
   body("dob").isISO8601().withMessage("Enter a valid date of birth").custom(adultApplicantCheck),
-  body("email").optional({ values: "falsy" }).trim().isEmail().withMessage("Enter a valid email address"),
+  /*
+  Email zaroori hai — OTP verify hone par isi se customer ka `users` account
+  (aur CUST id) banta hai, aur us model me email required + unique hai.
+  */
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Customer email is required")
+    .isEmail()
+    .withMessage("Enter a valid email address"),
   optionalText("state"),
   optionalText("city"),
   body("pincode")

@@ -10,14 +10,19 @@ const {
   franchiseCustomerValidator,
   franchiseCustomerUpdateValidator,
 } = require("./franchiseCustomer.validator");
-const { franchiseLoanApplyValidator } = require("./franchise.validator");
+const {
+  franchiseLoanApplyValidator,
+  franchiseCustomerOtpValidator,
+} = require("./franchise.validator");
 
 /*
 ========================================
 Franchise customer API — mounted at /api/franchise/customer
 (APPROVED franchise only, franchise token)
 
-  POST   /register                     naya customer register karo
+  POST   /register                     naya customer register karo (OTP customer
+                                       ke phone par jaata hai)
+  POST   /verify-otp                   customer ka OTP -> CUST id banti hai
   POST   /:product/applyloan           usi customer ke liye loan apply karo
                                        e.g. /customer/personal/applyloan
                                             /customer/gold-loan/applyloan
@@ -29,7 +34,12 @@ Franchise customer API — mounted at /api/franchise/customer
   GET    /:id/loans                    us customer ke saare loans + status/timeline
   GET    /:id/loans/:applicationNo     ek loan ka status (LOAN000001)
 
-Flow seedha hai: pehle `register` (customer save), phir `:product/applyloan`.
+Flow seedha hai — teen step, aur beech me customer ka OTP:
+
+  1. POST /register          customer ki details save + uske phone par OTP
+  2. POST /verify-otp        OTP match -> customer ka `users` account + CUST id
+  3. POST /:product/applyloan loan apply (customer verified hona zaroori hai)
+
 Loan apply product ko URL se leta hai; `productFromParam` us segment ko
 LOAN_PRODUCTS key me badal kar body par pin kar deta hai, isliye usi product ke
 normal validation rules chalti hain.
@@ -37,6 +47,15 @@ normal validation rules chalti hain.
 */
 
 router.post("/register", auth, requireApprovedFranchise, franchiseCustomerValidator, controller.register);
+
+/* Customer ke phone par aaya OTP — verify hone par CUST id banti hai. */
+router.post(
+  "/verify-otp",
+  auth,
+  requireApprovedFranchise,
+  franchiseCustomerOtpValidator,
+  controller.verifyCustomerOtp
+);
 
 router.post(
   "/:product/applyloan",
