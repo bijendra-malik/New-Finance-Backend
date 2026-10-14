@@ -1,6 +1,22 @@
 const { body } = require("express-validator");
 const handleValidationErrors = require("../../middleware/validation.middleware");
-const { USER_ROLE_VALUES } = require("../../constants/roles");
+
+/*
+==========================================
+Entry validators.
+
+Register/login nahi hai — sirf do step:
+
+  1. POST /api/auth/:product      (customer)  ya  POST /api/franchise/entry
+     Dono ka payload bilkul same hai: name, email, mobile, DOB, PAN +
+     continent + country (state / city / pincode entry form me nahi hain).
+  2. POST /api/auth/verify-otp    (customer)  ya  POST /api/franchise/entry/verify
+     Mobile + OTP.
+
+PAN yahan uppercase kar diya jaata hai, isliye service ko lowercase PAN ka
+case handle nahi karna padta.
+==========================================
+*/
 
 const mobile = () =>
   body("mobile")
@@ -14,34 +30,43 @@ const otp = () =>
     .matches(/^\d{4,8}$/)
     .withMessage("Enter a valid OTP");
 
-/*
-Register accepts BOTH account types through one endpoint. `role`, `continent`
-and `country` stay optional so older clients that only send name/mobile/email
-keep working; when a role IS sent it must be a known one.
-*/
-const registerValidator = [
+/**
+ * Step 1 ke common field rules — customer ka per-loan entry aur franchise entry
+ * dono inhi se shuru hote hain. Franchise entry iske aage plan/business ke apne
+ * rules jodta hai (franchise.validator.js), isliye ye alag rakhe gaye hain.
+ */
+const entryFieldRules = [
   body("name").trim().notEmpty().withMessage("Name is required"),
   mobile(),
-  body("email").trim().isEmail().withMessage("Enter a valid email address").normalizeEmail(),
-  body("role")
-    .optional()
+  body("email")
     .trim()
-    .isIn(USER_ROLE_VALUES)
-    .withMessage(`Role must be one of: ${USER_ROLE_VALUES.join(", ")}`),
-  body("continent").optional().trim().isString().withMessage("Continent must be text"),
-  body("country").optional().trim().isString().withMessage("Country must be text"),
-  handleValidationErrors,
+    .isEmail()
+    .withMessage("Enter a valid email address")
+    .normalizeEmail(),
+  body("dob")
+    .trim()
+    .notEmpty()
+    .withMessage("Date of birth is required")
+    .isISO8601()
+    .withMessage("Enter a valid date of birth (YYYY-MM-DD)"),
+  body("panNumber")
+    .trim()
+    .toUpperCase()
+    .matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/)
+    .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
+  /* Sirf continent + country — state / city / pincode entry form me nahi hain. */
+  body("continent").optional().trim(),
+  body("country").optional().trim(),
 ];
 
-const loginValidator = [mobile(), handleValidationErrors];
+/** Step 1 — customer ka entry form. */
+const entryValidator = [...entryFieldRules, handleValidationErrors];
 
+/** Step 2 — OTP verify. */
 const verifyOtpValidator = [mobile(), otp(), handleValidationErrors];
 
-const verifyLoginOtpValidator = [mobile(), otp(), handleValidationErrors];
-
 module.exports = {
-  registerValidator,
-  loginValidator,
+  entryFieldRules,
+  entryValidator,
   verifyOtpValidator,
-  verifyLoginOtpValidator,
 };
