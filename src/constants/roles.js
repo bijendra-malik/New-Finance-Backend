@@ -16,8 +16,9 @@ const TOKEN_TYPE = {
 ==========================================
 Application roles.
 
-One `/auth/register` creates both kinds of account; the role decides which
-dashboard and which apply endpoint the account may use.
+Account sirf mobile OTP verify hone par banta hai (loan entry: `POST /api/auth/:product`,
+franchise entry: `POST /api/franchise/entry`). Role decide karta hai ki account
+kis collection me jaayega aur kaunsa dashboard / endpoint uske liye khulega.
 
 `LEGACY_CUSTOMER` ("User") is kept in the enum only so accounts created
 before this change still validate on save — new registrations always get
