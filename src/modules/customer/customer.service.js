@@ -4,6 +4,13 @@ const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
+const {
+  LOAN_FIELD_NAMES,
+  PERSONAL_DETAILS_FIELD_NAMES,
+  EXPOSURE_FIELD_NAMES,
+  loanRequirementFieldNames,
+  incomeFieldNamesForEmploymentType,
+} = require("../loans/shared/loanSchema");
 
 /*
 ==========================================
@@ -63,39 +70,59 @@ const ageInYears = (birthDate) => {
 };
 
 /*
-Step 1 of the dashboard flow: the applicant picked a product and is asked for
-the two "basic details" (DOB + PAN). Nothing is written to the database here —
-this only confirms the basics so the detailed loan form can open. The full
-apply (and the LOAN… id) happens in createCustomerLoan.
-*/
-const validateApplyRegistration = (body = {}, registeredName = "") => {
-  const payload = unwrap(body);
+Loan form ka CONFIG — kis product me kaunse field aate hain aur kya limits hain.
 
-  const product = cleanText(payload.product);
+  GET /api/customer/loan-apply?product=personal&employmentType=Salaried
+
+Form isi se render hota hai; submit alag se POST /api/customer/loan-apply se hota
+hai. Field names wahi hain jo product ka schema aur validator use karte hain
+(loanSchema.js se), isliye form aur backend kabhi out of sync nahi jaate.
+*/
+const getLoanApplyForm = (rawProduct, rawEmploymentType = "") => {
+  const product = cleanText(rawProduct);
   const config = LOAN_PRODUCTS[product];
   if (!config) throw badRequest("A valid loan product is required");
 
-  const panNumber = cleanText(payload.panNumber).toUpperCase();
-  if (!PAN_REGEX.test(panNumber)) throw badRequest("Enter a valid PAN number (e.g. ABCDE1234F)");
-
-  const dob = cleanText(payload.dob);
-  const birthDate = new Date(dob);
-  if (!dob || Number.isNaN(birthDate.getTime())) {
-    throw badRequest("Enter a valid date of birth (YYYY-MM-DD)");
-  }
-
-  const age = ageInYears(birthDate);
-  if (age < 18) throw badRequest("Applicant must be at least 18 years old to apply for a loan");
+  // Employment type ke hisaab se income fields badalte hain (Salaried vs Business).
+  const employmentType =
+    cleanText(rawEmploymentType) ||
+    cleanText(config.employmentTypeDefault) ||
+    cleanText(config.employmentTypes?.[0]);
 
   return {
     product,
     loanType: config.loanType,
-    applicant: {
-      name: cleanText(registeredName),
-      dob: birthDate.toISOString().slice(0, 10),
-      panNumber,
+    route: config.route,
+    employmentTypes: config.employmentTypes || [],
+    employmentTypeRequired: !!config.employmentTypeRequired,
+    employmentTypeDefault: employmentType,
+    income: config.income,
+
+    loanAmountRequired: config.loanAmountRequired !== false,
+    loanAmountMin: config.loanAmountMin ?? null,
+    loanAmountMessage: config.loanAmountMessage || "",
+
+    loanTenureRequired: config.loanTenureRequired !== false,
+    loanTenureMin: config.loanTenureMin ?? null,
+    loanTenureMax: config.loanTenureMax ?? null,
+    loanTenureMessage: config.loanTenureMessage || "",
+
+    personalDetailsRequired: !!config.personalDetailsRequired,
+    exposureRequired: !!config.exposureRequired,
+    multiValueFields: config.multiValueFields || [],
+
+    /* Form ke sections — kaunse field kis hisse me aate hain. */
+    sections: {
+      loanBasics: LOAN_FIELD_NAMES,
+      loanRequirements: config.loanRequirements
+        ? loanRequirementFieldNames[config.loanRequirements] || []
+        : null,
+      income: incomeFieldNamesForEmploymentType(employmentType),
+      existingLoanExposure: EXPOSURE_FIELD_NAMES,
+      personalDetails: PERSONAL_DETAILS_FIELD_NAMES,
     },
-    age,
+
+    submitTo: "POST /api/customer/loan-apply",
   };
 };
 
@@ -257,7 +284,7 @@ const getCustomerSummary = async (customerId) => {
 };
 
 module.exports = {
-  validateApplyRegistration,
+  getLoanApplyForm,
   createCustomerLoan,
   listCustomerLoans,
   getCustomerLoanDetail,

@@ -1,29 +1,17 @@
-const { body } = require("express-validator");
-
 const handleValidationErrors = require("../../middleware/validation.middleware");
 const { buildProductApplyValidator } = require("../loans/shared/productApplyValidator");
 
 /*
 ==========================================
 Customer validators.
+
+Sirf ek hai: loan apply. Purana step-1 ("apply-register", jo dob + PAN alag se
+maangta tha) hata diya gaya — wahi details ab entry form (`POST /api/auth/:product`)
+me aati hain aur OTP verify hone par account par save ho jaati hain.
+
+Form ka config `GET /api/customer/loan-apply` se milta hai; submit yahin se hota hai.
 ==========================================
 */
-
-/*
-Step 1 — "Apply register": the product the applicant clicked plus the two basic
-details (DOB + PAN). Format checked here; the product lookup and the 18+ age
-rule live in the service.
-*/
-const applyRegisterValidator = [
-  body("product").trim().notEmpty().withMessage("Loan product is required"),
-  body("panNumber")
-    .trim()
-    .toUpperCase()
-    .matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/)
-    .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
-  body("dob").trim().notEmpty().withMessage("Date of birth is required"),
-  handleValidationErrors,
-];
 
 /*
 Body carries `product`, so the matching product's apply rules run at request
@@ -31,4 +19,4 @@ time — same rules as the per-product routes.
 */
 const customerLoanApplyValidator = buildProductApplyValidator();
 
-module.exports = { applyRegisterValidator, customerLoanApplyValidator };
+module.exports = { customerLoanApplyValidator, handleValidationErrors };

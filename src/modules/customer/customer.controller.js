@@ -1,5 +1,4 @@
 const customerService = require("./customer.service");
-const User = require("../auth/user.model");
 
 /*
 ==========================================
@@ -8,37 +7,21 @@ Customer endpoints.
 */
 
 /*
-Step 1 of the loan flow — "Apply register"
-POST /api/customer/apply-register
+Loan form ka CONFIG
+GET /api/customer/loan-apply?product=personal&employmentType=Salaried
 
-The customer clicked a loan product and this form collects the two basic
-details at once: date of birth + PAN. The name comes from their registered
-account, identified by the authenticated token.
-
-  { "product": "personal", "dob": "1995-05-15", "panNumber": "ABCDE1234F" }
-
-It only VALIDATES (product valid, PAN format, 18+ age) — nothing is stored
-yet, so an abandoned form leaves no half application behind. On success the
-client opens the full loan form and submits it to /api/customer/loan-apply
-with these same dob + panNumber included.
+Verify-otp ke baad client yahi call karta hai: us product me kaunse field aate
+hain (sections), kya limits hain, aur kaun sa field required hai. Isse form
+render hota hai — submit alag se POST /api/customer/loan-apply se hota hai.
 */
-exports.applyRegister = async (req, res, next) => {
+exports.loanApplyForm = async (req, res, next) => {
   try {
-    const customer = await User.findById(req.user.id);
-    if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: "Customer account not found",
-      });
-    }
+    const form = customerService.getLoanApplyForm(
+      req.query.product ?? req.body?.product,
+      req.query.employmentType
+    );
 
-    const result = customerService.validateApplyRegistration(req.body, customer.name);
-
-    res.json({
-      success: true,
-      nextStep: "loan-apply",
-      ...result,
-    });
+    res.json({ success: true, ...form });
   } catch (error) {
     next(error);
   }
