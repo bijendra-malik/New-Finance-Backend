@@ -1,7 +1,8 @@
 const { buildProductApplyValidator } = require("../src/modules/loans/shared/productApplyValidator");
 const { franchiseLoanApplyValidator } = require("../src/modules/franchise/franchise.validator");
 const customerService = require("../src/modules/customer/customer.service");
-const { describeLoanStatus } = require("../src/modules/loans/shared/loanStatus");
+const { describeLoanStatus, MODELS } = require("../src/modules/loans/shared/loanStatus");
+const { assertNoExistingDirectApplication } = require("../src/modules/loans/shared/loan.service");
 const normalizeApplyPayload = require("../src/middleware/normalizeApplyPayload.middleware");
 
 /** Runs a chain of middlewares (like the real route) and reports the outcome. */
@@ -96,6 +97,38 @@ describe("customerService.resolveProduct", () => {
     }
     expect(error).toBeDefined();
     expect(error.statusCode).toBe(400);
+  });
+});
+
+describe("customerService.hasAppliedForProduct", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("checks only the selected product and reports its existing direct application", async () => {
+    const exists = jest.spyOn(MODELS.personal, "exists").mockResolvedValue({ _id: "application-id" });
+
+    await expect(customerService.hasAppliedForProduct("customer-id", "personal")).resolves.toBe(true);
+    expect(exists).toHaveBeenCalledWith({ user: "customer-id", franchise: null });
+  });
+
+  it("keeps other loan products independently applicable", async () => {
+    const personalExists = jest.spyOn(MODELS.personal, "exists").mockResolvedValue({ _id: "personal-id" });
+    const businessExists = jest.spyOn(MODELS.business, "exists").mockResolvedValue(null);
+
+    await expect(customerService.hasAppliedForProduct("customer-id", "personal")).resolves.toBe(true);
+    await expect(customerService.hasAppliedForProduct("customer-id", "business")).resolves.toBe(false);
+    expect(personalExists).toHaveBeenCalledTimes(1);
+    expect(businessExists).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a second direct application for the same product with HTTP 409", async () => {
+    jest.spyOn(MODELS.personal, "exists").mockResolvedValue({ _id: "application-id" });
+
+    await expect(assertNoExistingDirectApplication(MODELS.personal, "customer-id")).rejects.toMatchObject({
+      statusCode: 409,
+      message: "You have already applied for this loan product.",
+    });
   });
 });
 

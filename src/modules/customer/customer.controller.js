@@ -20,8 +20,9 @@ exports.loanApplyForm = async (req, res, next) => {
       req.query.product ?? req.body?.product,
       req.query.employmentType
     );
+    const alreadyApplied = await customerService.hasAppliedForProduct(req.user.id, form.product);
 
-    res.json({ success: true, ...form });
+    res.json({ success: true, ...form, alreadyApplied, canApply: !alreadyApplied });
   } catch (error) {
     next(error);
   }
@@ -38,6 +39,7 @@ exports.loanApply = async (req, res, next) => {
     res.status(201).json({
       success: true,
       product,
+      loanType: application.loanType,
       data: application,
     });
   } catch (error) {

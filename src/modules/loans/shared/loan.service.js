@@ -123,6 +123,15 @@ const unwrap = (body) =>
 const supportsTransactionBanks = (employmentType) =>
   incomeFieldNamesForEmploymentType(employmentType).includes("transactionBankName");
 
+const assertNoExistingDirectApplication = async (Model, userId) => {
+  const existingApplication = await Model.exists({ user: userId, franchise: null });
+  if (existingApplication) {
+    const error = new Error("You have already applied for this loan product.");
+    error.statusCode = 409;
+    throw error;
+  }
+};
+
 /**
  * Multi-select fields accept a single value, a CSV, or an array.
  *
@@ -257,6 +266,7 @@ const createLoanController = (productKey) => {
           });
         }
 
+        await assertNoExistingDirectApplication(Model, req.user.id);
         const applicationNo = await nextLoanApplicationNo();
         const application = await Model.create(
           buildLoanDocument(productKey, req.body, req.user.id, { applicationNo })
@@ -292,4 +302,5 @@ module.exports = {
   createLoanController,
   buildLoanDocument,
   sanitizeLoanResponse,
+  assertNoExistingDirectApplication,
 };

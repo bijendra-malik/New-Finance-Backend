@@ -3,7 +3,11 @@ const mongoose = require("mongoose");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
-const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
+const {
+  buildLoanDocument,
+  sanitizeLoanResponse,
+  assertNoExistingDirectApplication,
+} = require("../loans/shared/loan.service");
 const {
   LOAN_FIELD_NAMES,
   PERSONAL_DETAILS_FIELD_NAMES,
@@ -134,12 +138,20 @@ const createCustomerLoan = async (customerId, body = {}) => {
   const payload = unwrap(body);
   const product = resolveProduct(payload);
 
+  await assertNoExistingDirectApplication(MODELS[product], customerId);
+
   const applicationNo = await nextLoanApplicationNo();
 
   const document = buildLoanDocument(product, payload, customerId, { applicationNo });
   const application = await MODELS[product].create(document);
 
   return { application: sanitizeLoanResponse(product, application), product };
+};
+
+/** Whether this customer has already applied for the selected direct product. */
+const hasAppliedForProduct = async (customerId, product) => {
+  const key = resolveProduct({ product });
+  return Boolean(await MODELS[key].exists({ user: customerId, franchise: null }));
 };
 
 /* ------------------------------------------------------- status helpers -- */
@@ -286,6 +298,7 @@ const getCustomerSummary = async (customerId) => {
 module.exports = {
   getLoanApplyForm,
   createCustomerLoan,
+  hasAppliedForProduct,
   listCustomerLoans,
   getCustomerLoanDetail,
   getCustomerLoansByPan,
