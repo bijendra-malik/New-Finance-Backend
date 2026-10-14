@@ -4,7 +4,7 @@ const {
   updatePlanValidator,
   setStatusValidator,
 } = require("../src/modules/franchise/franchisePlan.validator");
-const { franchiseApplyValidator } = require("../src/modules/franchise/franchise.validator");
+const { franchiseEntryValidator } = require("../src/modules/franchise/franchise.validator");
 
 const {
   withDerivedFields,
@@ -315,41 +315,37 @@ describe("franchise plan admin validators", () => {
   });
 });
 
-describe("franchise apply validator (planCode vs legacy package)", () => {
+describe("franchise entry validator (planCode vs legacy package)", () => {
   const base = {
+    name: "Amit Verma",
+    email: "amit@example.com",
+    mobile: "9876543222",
+    dob: "1990-01-20",
     panNumber: "ABCDE1234F",
-    state: "UP",
-    city: "Noida",
   };
 
   it("accepts the new planCode payload", async () => {
-    expect((await runChain(franchiseApplyValidator, { ...base, planCode: "3Y" })).passed).toBe(true);
+    expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3Y" })).passed).toBe(true);
   });
 
   it("still accepts the legacy package payload", async () => {
-    expect((await runChain(franchiseApplyValidator, { ...base, package: "Premium" })).passed).toBe(true);
+    expect((await runChain(franchiseEntryValidator, { ...base, package: "Premium" })).passed).toBe(true);
   });
 
-  it("rejects an application with no plan and no package", async () => {
-    const result = await runChain(franchiseApplyValidator, base);
+  it("rejects an entry with no plan and no package", async () => {
+    const result = await runChain(franchiseEntryValidator, base);
 
     expect(result.passed).toBe(false);
     expect(result.statusCode).toBe(400);
   });
 
   it("rejects a malformed plan code", async () => {
-    expect((await runChain(franchiseApplyValidator, { ...base, planCode: "3 year" })).passed).toBe(false);
+    expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3 year" })).passed).toBe(false);
   });
 
-  it("keeps the PAN / state / city rules working", async () => {
-    expect(
-      (await runChain(franchiseApplyValidator, { ...base, planCode: "3Y", panNumber: "BADPAN" })).passed
-    ).toBe(false);
-    expect(
-      (await runChain(franchiseApplyValidator, { ...base, planCode: "3Y", state: "" })).passed
-    ).toBe(false);
-    expect(
-      (await runChain(franchiseApplyValidator, { ...base, planCode: "3Y", city: "  " })).passed
-    ).toBe(false);
+  it("keeps the PAN / mobile / DOB rules working", async () => {
+    expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3Y", panNumber: "BADPAN" })).passed).toBe(false);
+    expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3Y", mobile: "12345" })).passed).toBe(false);
+    expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3Y", dob: "not-a-date" })).passed).toBe(false);
   });
 });
