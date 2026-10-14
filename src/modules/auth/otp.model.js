@@ -17,6 +17,7 @@ hai, isliye ek OTP do jagah (customer entry + franchise entry) use nahi hota.
 const pendingDetailsSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, default: "" },
+    mobile: { type: String, trim: true, default: "" },
     email: { type: String, trim: true, lowercase: true, default: "" },
     dob: { type: Date, default: null },
     panNumber: { type: String, trim: true, uppercase: true, default: "" },
@@ -55,11 +56,6 @@ const otpSchema = new mongoose.Schema(
 
     otp: {
       type: String,
-      required: true,
-    },
-
-    expiresAt: {
-      type: Date,
       required: true,
     },
 
@@ -113,8 +109,5 @@ const otpSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
-// Auto delete after expiry
-otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model("OTP", otpSchema);

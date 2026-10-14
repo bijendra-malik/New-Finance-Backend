@@ -78,8 +78,6 @@ const ageInYears = (birthDate) => {
   return age;
 };
 
-const otpTtlMs = () => (Number(process.env.OTP_EXPIRE_MINUTES) || 5) * 60 * 1000;
-
 const freshOtp = () =>
   process.env.STATIC_OTP || Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -175,7 +173,13 @@ const upsertCustomer = async (mobile, details) => {
 
   if (!existing) {
     const account = new User({
-      ...details,
+      name: details.name,
+      mobile,
+      email: details.email,
+      dob: details.dob,
+      panNumber: details.panNumber,
+      continent: details.continent,
+      country: details.country,
       role: USER_ROLE.CUSTOMER,
       customerId: await nextCustomerId(),
     });
@@ -392,7 +396,6 @@ const startEntry = async ({
     pendingFranchise,
     franchise: franchise?._id || null,
     franchiseCustomer: franchiseCustomer?._id || null,
-    expiresAt: new Date(Date.now() + otpTtlMs()),
   });
 
   const otpSent = await sendOTP(details.mobile, otp);
@@ -414,11 +417,22 @@ const verifyEntry = async ({
   expectedFranchiseCustomerId = "",
   issueToken = true,
 }) => {
-  const otpData = await OTP.findOne({ mobile });
+  const verifiedMobile = cleanText(mobile);
+  const submittedOtp = cleanText(otp);
+  if (!MOBILE_REGEX.test(verifiedMobile)) {
+    throw badRequest("Enter a valid 10-digit mobile number");
+  }
+  if (!submittedOtp) throw badRequest("OTP is required");
+
+  const otpData = await OTP.findOne({ mobile: verifiedMobile });
 
   if (!otpData) throw badRequest("OTP Not Found");
-  if (otpData.expiresAt < new Date()) throw badRequest("OTP Expired");
-  if (otpData.otp !== otp) throw badRequest("Invalid OTP");
+  if (String(otpData.otp) !== submittedOtp) throw badRequest("Invalid OTP");
+
+  const accountMobile = cleanText(otpData.mobile);
+  if (!MOBILE_REGEX.test(accountMobile)) {
+    throw badRequest("Entry mobile number not found. Please request a new OTP.");
+  }
 
   const role = otpData.role || USER_ROLE.CUSTOMER;
 
@@ -447,16 +461,22 @@ const verifyEntry = async ({
   banana galat hoga, isliye saaf message ke saath form dobara mangwa lete hain.
   */
   const details = otpData.pendingDetails;
-  if (!details || !details.name) {
-    await OTP.deleteMany({ mobile });
+  /*
+  Account banate waqt User/Franchise model name + email required maangta hai.
+  Schema update se pehle bane purane OTP docs adhoore ho sakte hain (sirf
+  name) — unhe mongoose ValidationError ("Mobile number is required") ke
+  bajaye yahin clear message dekar hata dete hain.
+  */
+  if (!details || !details.name || !details.email) {
+    await OTP.deleteMany({ mobile: verifiedMobile });
     throw badRequest("Entry details not found. Please fill the form again.");
   }
 
   const isFranchise = role === USER_ROLE.FRANCHISE;
 
   const { account } = isFranchise
-    ? await upsertFranchise(mobile, details)
-    : await upsertCustomer(mobile, details);
+    ? await upsertFranchise(accountMobile, details)
+    : await upsertCustomer(accountMobile, details);
 
   // Franchise entry me plan + business details bhi yahin utarti hain -> Pending.
   if (isFranchise) await applyFranchiseApplication(account, otpData.pendingFranchise);
@@ -466,7 +486,7 @@ const verifyEntry = async ({
 
   await saveAccount(account);
 
-  await OTP.deleteMany({ mobile });
+  await OTP.deleteMany({ mobile: verifiedMobile });
 
   const payload = buildResponse({ role, account, product });
 
