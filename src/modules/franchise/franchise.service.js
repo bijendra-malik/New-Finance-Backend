@@ -4,9 +4,8 @@ const bcrypt = require("bcryptjs");
 const User = require("../auth/user.model");
 const Franchise = require("./franchise.model");
 const FranchiseCustomer = require("./franchiseCustomer.model");
-const franchisePlanService = require("./franchisePlan.service");
 const generateToken = require("../../utils/generateToken");
-const { nextLoanApplicationNo } = require("../../utils/sequence");
+const { nextLoanApplicationNo, nextCustomerId } = require("../../utils/sequence");
 const { MODELS } = require("../loans/shared/loanModels");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
@@ -16,12 +15,13 @@ const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 ==========================================
 Franchise service.
 
-A franchise account is created through the SAME /api/auth/register endpoint as
-a customer (role = "Franchise"). Everything franchise-specific happens here:
+Franchise account mobile OTP verify hone par banta hai, aur usi waqt entry ka plan +
+business data bhi utar jaata hai (POST /api/franchise/entry + /entry/verify —
+engine auth/entry.service.js me hai). Alag "apply" step nahi hai.
+Everything franchise-specific happens here:
 
-  1. applyFranchise()      -> profile details, franchiseStatus = Pending
-  2. loginFranchise()      -> FRN code + password -> JWT
-  3. createFranchiseLoan() -> approved franchise applies for its OWN customer
+  1. loginFranchise()      -> FRN code + password -> JWT
+  2. createFranchiseLoan() -> approved franchise applies for its OWN customer
                              (customer register/read ka kaam
                               franchiseCustomer.service.js me hai)
   4. listFranchiseLoans()  -> all loans submitted through this FRN, grouped
@@ -30,8 +30,6 @@ The admin actions (approve / reject, which mint the FRN code) live in
 modules/admin/franchise.service.js.
 ==========================================
 */
-
-const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -42,6 +40,12 @@ const badRequest = (message) => {
 const unauthorized = (message) => {
   const error = new Error(message);
   error.statusCode = 401;
+  return error;
+};
+
+const forbidden = (message) => {
+  const error = new Error(message);
+  error.statusCode = 403;
   return error;
 };
 
@@ -56,86 +60,6 @@ const unwrap = (body) =>
   body && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : body || {};
 
 const cleanText = (value) => String(value ?? "").trim();
-
-const findOrMigrateFranchise = async (userId) => {
-  const franchise = await Franchise.findById(userId);
-  if (franchise) return franchise;
-
-  if (!mongoose.isValidObjectId(userId)) return null;
-
-  // Older franchise accounts may still exist only in `users`. Copy the raw
-  // document so legacy franchise fields are preserved, keeping its ID so the
-  // already-issued JWT continues to identify the same account.
-  const legacy = await User.collection.findOne({
-    _id: new mongoose.Types.ObjectId(userId),
-    role: USER_ROLE.FRANCHISE,
-  });
-  if (!legacy) return null;
-
-  return Franchise.create({ ...legacy, role: USER_ROLE.FRANCHISE });
-};
-
-/* ---------------------------------------------------------------- apply -- */
-
-const applyFranchise = async (userId, body = {}) => {
-  const payload = unwrap(body);
-
-  const franchise = await findOrMigrateFranchise(userId);
-  if (!franchise) throw notFound("Franchise account not found");
-
-  if (franchise.franchiseStatus === FRANCHISE_STATUS.APPROVED) {
-    throw badRequest("Your franchise is already approved.");
-  }
-
-  const panNumber = cleanText(payload.panNumber).toUpperCase();
-  if (!panNumber) throw badRequest("PAN number is required");
-  if (!PAN_REGEX.test(panNumber)) throw badRequest("Enter a valid PAN number (e.g. ABCDE1234F)");
-
-  const state = cleanText(payload.state);
-  const city = cleanText(payload.city);
-  const planCode = cleanText(payload.planCode);
-  // Purana free-text package — backward compat ke liye abhi bhi accept karte hain.
-  const pkg = cleanText(payload.package);
-
-  if (!state) throw badRequest("State is required");
-  if (!city) throw badRequest("City is required");
-  if (!planCode && !pkg) throw badRequest("Please select a franchise plan before applying");
-
-  /*
-  planCode bheja ho to plan ka SNAPSHOT banate hain (sirf id store nahi karte).
-  Sirf ACTIVE plan chalta hai — deactivate kiya hua plan naye application me
-  nahi aa sakta.
-  */
-  const planSnapshot = planCode
-    ? franchisePlanService.buildPlanSnapshot(await franchisePlanService.resolveActivePlan(planCode))
-    : null;
-
-  // Optional business profile — stored as-is for the admin to review.
-  const businessDetails = {
-    businessName: cleanText(payload.businessName),
-    businessType: cleanText(payload.businessType),
-    gstNumber: cleanText(payload.gstNumber),
-    address: cleanText(payload.address),
-    yearsInBusiness: cleanText(payload.yearsInBusiness),
-  };
-
-  franchise.panNumber = panNumber;
-  franchise.state = state;
-  franchise.city = city;
-  franchise.pincode = cleanText(payload.pincode);
-  franchise.plan = planSnapshot;
-  // `package` plan ke naam ke saath sync rakha jaata hai; plan na chuna ho to
-  // jo bheja gaya wahi rehta hai (purana behavior).
-  franchise.package = planSnapshot ? planSnapshot.name : pkg;
-  franchise.businessDetails = businessDetails;
-  franchise.franchiseStatus = FRANCHISE_STATUS.PENDING;
-  franchise.franchiseAppliedAt = new Date();
-  franchise.franchiseRejectedAt = null;
-
-  await franchise.save();
-
-  return franchise;
-};
 
 /* ---------------------------------------------------------------- login -- */
 
@@ -180,8 +104,9 @@ const loginFranchise = async (franchiseId, password) => {
  * Franchise ka apna customer (franchisecustomers collection) — franchise-scoped.
  *
  * Loan apply ka pehla requirement yahi doc hai: pehle
- * POST /api/franchise/customer/register se customer banao, phir uski `_id`
- * `franchiseCustomerId` ke roop me bhejo.
+ * POST /api/franchise/customer/register se customer banao, phir
+ * POST /api/franchise/customer/verify-otp se uska mobile verify karo, aur tab
+ * uski `_id` `franchiseCustomerId` ke roop me bhejo.
  */
 const loadFranchiseCustomer = async (franchise, rawId) => {
   const id = cleanText(rawId);
@@ -252,11 +177,18 @@ const resolveCustomerAccount = async (franchiseCustomer, email) => {
   const emailTaken = await User.findOne({ email: emailLower });
   if (emailTaken) throw badRequest("This email is already registered. Please update the customer email first.");
 
+  /*
+  Franchise ke customer ka apna account — CUST id yahan bhi mint hoti hai,
+  warna uske naam par gaya loan status me dhoondha hi na jaata (status ka pehla
+  door CUST id hi hai). isVerified false rehta hai: OTP customer ne khud verify
+  nahi kiya, details franchise ne bhari hain.
+  */
   return User.create({
     name: cleanText(franchiseCustomer.fullName),
     mobile,
     email: emailLower,
     role: USER_ROLE.CUSTOMER,
+    customerId: await nextCustomerId(),
     isVerified: false,
   });
 };
@@ -281,6 +213,16 @@ const createFranchiseLoan = async (franchise, body = {}) => {
   }
 
   const franchiseCustomer = await loadFranchiseCustomer(franchise, payload.franchiseCustomerId);
+
+  /*
+  Customer ka mobile verify hona zaroori hai: OTP ka matlab hai ki customer ne
+  khud apne loan ke liye haan kahi. Iske bina loan file nahi hoga.
+  */
+  if (!franchiseCustomer.isVerified) {
+    throw forbidden(
+      "This customer's mobile is not verified yet. Send the OTP and verify the customer before applying for a loan."
+    );
+  }
 
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
   const customer = await resolveCustomerAccount(franchiseCustomer, applicant.email);
@@ -327,9 +269,7 @@ const listFranchiseLoans = async (franchise) => {
 };
 
 module.exports = {
-  applyFranchise,
   loginFranchise,
   createFranchiseLoan,
   listFranchiseLoans,
-  PAN_REGEX,
 };

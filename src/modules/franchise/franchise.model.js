@@ -19,8 +19,8 @@ collection hai. Franchise ke liye alag collection rakhne ke faayde:
 
 Flow (code me exactly yeh hota hai):
 
-  POST /api/auth/register (role "Franchise")  -> franchiseStatus = "None"
-  POST /api/auth/verify-otp                   -> JWT, nextStep = franchise-apply
+  POST /api/franchise/entry                   -> details PENDING + OTP, account nahi
+  POST /api/franchise/entry/verify            -> account + JWT, nextStep = franchise-apply
   POST /api/franchise/apply                   -> franchiseStatus = "Pending"
   PATCH /api/admin/franchises/:id/approve     -> FRN000125 + PAN ka password hash
   POST /api/franchise/login (FRN + PAN)       -> JWT
@@ -34,7 +34,7 @@ franchise na dashboard khol sakti hai na koi loan apply kar sakti hai
 
 const franchiseSchema = new mongoose.Schema(
   {
-    /* ---- Registration data (/api/auth/register) ---- */
+    /* ---- Entry form data (POST /api/franchise/entry) ---- */
 
     name: {
       type: String,
@@ -108,6 +108,7 @@ const franchiseSchema = new mongoose.Schema(
     /* ---- Application details (POST /api/franchise/apply) ---- */
 
     panNumber: { type: String, trim: true, uppercase: true, default: "" },
+    dob: { type: Date, default: null },
     state: { type: String, trim: true, default: "" },
     city: { type: String, trim: true, default: "" },
     pincode: { type: String, trim: true, default: "" },
