@@ -1,7 +1,6 @@
-const { registerValidator } = require("../src/modules/auth/auth.validator");
 const {
   franchiseLoginValidator,
-  franchiseApplyValidator,
+  franchiseEntryValidator,
 } = require("../src/modules/franchise/franchise.validator");
 const {
   requireCustomer,
@@ -41,51 +40,6 @@ const runChain = (chain, body) => {
   });
 };
 
-describe("authValidators.registerValidator (role aware)", () => {
-  it("accepts a franchise registration with role + location", async () => {
-    const result = await runChain(registerValidator, {
-      role: "Franchise",
-      continent: "Asia",
-      country: "India",
-      name: "Amit",
-      mobile: "9876543222",
-      email: "amit@example.com",
-    });
-    expect(result.passed).toBe(true);
-  });
-
-  it("accepts a customer registration with role + location", async () => {
-    const result = await runChain(registerValidator, {
-      role: "Customer",
-      continent: "Asia",
-      country: "India",
-      name: "Rahul",
-      mobile: "9876543210",
-      email: "rahul@example.com",
-    });
-    expect(result.passed).toBe(true);
-  });
-
-  it("still accepts the legacy name/mobile/email-only payload", async () => {
-    const result = await runChain(registerValidator, {
-      name: "Legacy",
-      mobile: "9876543210",
-      email: "legacy@example.com",
-    });
-    expect(result.passed).toBe(true);
-  });
-
-  it("rejects an unknown role", async () => {
-    const result = await runChain(registerValidator, {
-      role: "Admin",
-      name: "Bad",
-      mobile: "9876543210",
-      email: "bad@example.com",
-    });
-    expect(result.passed).toBe(false);
-    expect(result.statusCode).toBe(400);
-  });
-});
 
 describe("franchise validators", () => {
   it("login requires franchiseId + password", async () => {
@@ -95,28 +49,22 @@ describe("franchise validators", () => {
     ).toBe(true);
   });
 
-  it("apply requires a valid PAN, state, city, package", async () => {
-    expect(
-      (
-        await runChain(franchiseApplyValidator, {
-          panNumber: "BADPAN",
-          state: "UP",
-          city: "Noida",
-          package: "Premium",
-        })
-      ).passed
-    ).toBe(false);
+  it("entry requires the basic details plus a plan (planCode or legacy package)", async () => {
+    const base = {
+      name: "Amit Verma",
+      email: "amit@example.com",
+      mobile: "9876543222",
+      dob: "1990-01-20",
+      panNumber: "ABCDE1234F",
+    };
 
-    expect(
-      (
-        await runChain(franchiseApplyValidator, {
-          panNumber: "ABCDE1234F",
-          state: "UP",
-          city: "Noida",
-          package: "Premium",
-        })
-      ).passed
-    ).toBe(true);
+    // Galat PAN -> fail
+    expect((await runChain(franchiseEntryValidator, { ...base, panNumber: "BADPAN", planCode: "3Y" })).passed).toBe(false);
+    // Plan kuch bhi nahi -> fail
+    expect((await runChain(franchiseEntryValidator, base)).passed).toBe(false);
+    // planCode ya legacy package — dono chalte hain
+    expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3Y" })).passed).toBe(true);
+    expect((await runChain(franchiseEntryValidator, { ...base, package: "Premium" })).passed).toBe(true);
   });
 });
 

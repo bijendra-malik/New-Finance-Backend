@@ -15,6 +15,16 @@ jest.mock("../src/modules/auth/user.model", () => ({
   findById: jest.fn(),
   create: jest.fn(),
 }));
+/*
+Register ab customer ke phone par OTP bhejta hai (entry engine). Test me SMS/DB
+nahi chahiye, isliye OTP model aur sendOTP stub kar diye jate hain.
+*/
+jest.mock("../src/modules/auth/otp.model", () => ({
+  findOne: jest.fn(),
+  create: jest.fn().mockResolvedValue({}),
+  deleteMany: jest.fn().mockResolvedValue({}),
+}));
+jest.mock("../src/utils/sendOTP", () => jest.fn(async () => true));
 
 const mongoose = require("mongoose");
 
@@ -182,7 +192,7 @@ describe("franchise apne customer ki detail aur loan status dekhta hai", () => {
   afterEach(() => jest.restoreAllMocks());
 
   it("groups the customer's loans per product with the same status view the customer sees", async () => {
-    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc());
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     stubLoanQueries({
       personal: [loanDoc()],
       goldLoan: [loanDoc({ _id: "loan-2", applicationNo: "LOAN000032", status: "Approved" })],
@@ -211,7 +221,7 @@ describe("franchise apne customer ki detail aur loan status dekhta hai", () => {
   });
 
   it("returns an empty tracking view when the customer has no loans yet", async () => {
-    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc());
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     stubLoanQueries({});
 
     const result = await customerService.listCustomerLoans(FRANCHISE, FC_ID);
@@ -222,7 +232,7 @@ describe("franchise apne customer ki detail aur loan status dekhta hai", () => {
   });
 
   it("returns one application's status and 404s for an unknown application number", async () => {
-    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc());
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     stubLoanQueries(
       { personal: [loanDoc({ status: "Approved", approvedAt: new Date("2026-10-03T00:00:00.000Z") })] },
       "findOne"
@@ -284,7 +294,7 @@ describe("franchise loan apply", () => {
   });
 
   it("applies the loan straight away, stamping the franchise customer + FRN", async () => {
-    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc());
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     User.findOne.mockResolvedValue({ _id: "customer-account-id", mobile: "9876543210", role: USER_ROLE.CUSTOMER });
 
     const createSpy = jest.spyOn(MODELS.personal, "create").mockResolvedValue({
