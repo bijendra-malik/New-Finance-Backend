@@ -5,13 +5,17 @@ const { USER_ROLE, USER_ROLE_VALUES } = require("../../constants/roles");
 ==========================================
 CUSTOMER accounts live in this collection (`users`).
 
+Account sirf tab banta hai jab loan entry form ka mobile OTP verify hota hai
+(entry.service.js) — step-1 par kuch save nahi hota. Usi waqt `customerId`
+(CUST000001) mint hoti hai, jo customer ki public identity hai.
+
 Franchise partners ka apna model/collection hai → modules/franchise/franchise.model.js
 (`franchises`), kyunki unke fields alag hain (package, PAN, FRN code, approval
-trail, login password) aur unhe alag manage karna hai.
+trail, login password) aur unhe alag manage karna hai. Ek hi mobile par dono
+account ho sakte hain — ID ka prefix (CUST / FRN) alag karta hai.
 
-Register me `role` se collection chunti hai (auth.controller.js). Is JWT me
-`{ id, mobile, role }` basta hai, isliye koi endpoint client ke bheje name/mobile
-par trust nahi karta.
+Is JWT me `{ id, mobile, role }` basta hai, isliye koi endpoint client ke bheje
+name/mobile par trust nahi karta.
 
 `USER_ROLE.FRANCHISE` is enum me sirf BACKWARD COMPATIBILITY ke liye rakha gaya
 hai: purane franchise documents (migration se pehle) save hone par validate ho
@@ -54,10 +58,32 @@ const userSchema = new mongoose.Schema(
       default: USER_ROLE.CUSTOMER,
     },
 
-    /* Location captured at registration (kept on the account so every loan /
+    /*
+    Public customer id — CUST000001. OTP verify hone par mint hoti hai aur
+    status check me yahi identity hoti hai (franchise ka FRN… hota hai).
+    Sparse rakhi gayi hai taaki purane (migration se pehle ke) accounts, jinke
+    paas ye field nahi hai, save hote waqt collide na karein.
+    */
+    customerId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      default: undefined,
+    },
+
+    /* Loan entry form se aane wale identity fields — mobile OTP inhe verify
+       karta hai, isliye loan form inhe dobara nahi maangta. */
+    dob: { type: Date, default: null },
+    panNumber: { type: String, trim: true, uppercase: true, default: "" },
+
+    /* Location captured at entry (kept on the account so every loan /
        franchise form can pre-fill it). */
     continent: { type: String, trim: true, default: "" },
     country: { type: String, trim: true, default: "" },
+    state: { type: String, trim: true, default: "" },
+    city: { type: String, trim: true, default: "" },
+    pincode: { type: String, trim: true, default: "" },
 
     isActive: {
       type: Boolean,
