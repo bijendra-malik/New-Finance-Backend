@@ -60,10 +60,27 @@ const nextFranchiseCode = async () => {
   }
 };
 
+/*
+Per-customer id minted the moment the mobile OTP is verified (CUST000001).
+
+Yahi id customer ki public identity hai: status check me isi se pata chalta hai
+ki caller customer hai (CUST...) ya franchise (FRN...), aur isi se uske saare
+loans dhoondhe jaate hain. Account ke saath hi ek hi baar banti hai — dobara
+entry karne par wahi id wapas milti hai.
+*/
+const nextCustomerId = async () => {
+  try {
+    return formatId("CUST", await nextSequence("customer"));
+  } catch (error) {
+    return randomId("CUST");
+  }
+};
+
 module.exports = {
   Counter,
   nextSequence,
   formatId,
   nextLoanApplicationNo,
   nextFranchiseCode,
+  nextCustomerId,
 };
