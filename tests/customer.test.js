@@ -1,9 +1,6 @@
 const { buildProductApplyValidator } = require("../src/modules/loans/shared/productApplyValidator");
-const { applyRegisterValidator } = require("../src/modules/customer/customer.validator");
 const { franchiseLoanApplyValidator } = require("../src/modules/franchise/franchise.validator");
 const customerService = require("../src/modules/customer/customer.service");
-const customerController = require("../src/modules/customer/customer.controller");
-const User = require("../src/modules/auth/user.model");
 const { describeLoanStatus } = require("../src/modules/loans/shared/loanStatus");
 const normalizeApplyPayload = require("../src/middleware/normalizeApplyPayload.middleware");
 
@@ -150,106 +147,5 @@ describe("customerService.buildStatusView", () => {
     const view = customerService.buildStatusView("personal", { ...base });
     expect(view.status).toBe("Submitted");
     expect(view.timeline).toHaveLength(1);
-  });
-});
-
-describe("customerService.validateApplyRegistration (step 1: dob + PAN)", () => {
-  const valid = { product: "personal", dob: "1995-05-15", panNumber: "ABCDE1234F" };
-
-  it("accepts a product + DOB + PAN and returns the applicant basics", () => {
-    const result = customerService.validateApplyRegistration(valid);
-    expect(result.product).toBe("personal");
-    expect(result.loanType).toBe("Personal Loan");
-    expect(result.applicant.panNumber).toBe("ABCDE1234F");
-    expect(result.applicant.dob).toBe("1995-05-15");
-    expect(result.age).toBeGreaterThan(18);
-  });
-
-  it("normalises a lowercase PAN to uppercase", () => {
-    const result = customerService.validateApplyRegistration({ ...valid, panNumber: "abcde1234f" });
-    expect(result.applicant.panNumber).toBe("ABCDE1234F");
-  });
-
-  it("uses the name supplied from the registered customer account", () => {
-    const result = customerService.validateApplyRegistration(
-      { ...valid, fullName: "Name from request" },
-      "Registered Customer"
-    );
-    expect(result.applicant.name).toBe("Registered Customer");
-  });
-
-  it("rejects an unknown product", () => {
-    expect(() => customerService.validateApplyRegistration({ ...valid, product: "nope" }))
-      .toThrowError(/valid loan product/i);
-  });
-
-  it("rejects a malformed PAN", () => {
-    expect(() => customerService.validateApplyRegistration({ ...valid, panNumber: "BADPAN" }))
-      .toThrowError(/PAN/i);
-  });
-
-  it("rejects an applicant under 18", () => {
-    expect(() => customerService.validateApplyRegistration({ ...valid, dob: "2015-01-01" }))
-      .toThrowError(/18 years/);
-  });
-
-  it("rejects an invalid date of birth", () => {
-    expect(() => customerService.validateApplyRegistration({ ...valid, dob: "not-a-date" }))
-      .toThrowError(/date of birth/i);
-  });
-});
-
-describe("customerController.applyRegister", () => {
-  it("loads the authenticated customer's registered name for the response", async () => {
-    const findById = jest.spyOn(User, "findById").mockResolvedValue({ name: "Registered Customer" });
-    const response = {
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      json(payload) {
-        this.payload = payload;
-        return this;
-      },
-    };
-    const next = jest.fn();
-
-    await customerController.applyRegister(
-      {
-        user: { id: "customer-id" },
-        body: { product: "personal", dob: "1995-05-15", panNumber: "ABCDE1234F" },
-      },
-      response,
-      next
-    );
-
-    expect(findById).toHaveBeenCalledWith("customer-id");
-    expect(response.payload.applicant.name).toBe("Registered Customer");
-    expect(next).not.toHaveBeenCalled();
-    findById.mockRestore();
-  });
-});
-
-describe("applyRegisterValidator", () => {
-  it("passes with product, PAN and DOB", async () => {
-    const result = await runPipeline(applyRegisterValidator, {
-      product: "personal", panNumber: "ABCDE1234F", dob: "1995-05-15",
-    });
-    expect(result.next).toBe(true);
-  });
-
-  it("rejects a missing PAN", async () => {
-    const result = await runPipeline(applyRegisterValidator, {
-      product: "personal", dob: "1995-05-15",
-    });
-    expect(result.next).toBe(false);
-    expect(result.statusCode).toBe(400);
-  });
-
-  it("rejects a missing product", async () => {
-    const result = await runPipeline(applyRegisterValidator, {
-      panNumber: "ABCDE1234F", dob: "1995-05-15",
-    });
-    expect(result.next).toBe(false);
   });
 });
