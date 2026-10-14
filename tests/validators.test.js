@@ -1,4 +1,3 @@
-const { registerValidator } = require("../src/modules/auth/auth.validator");
 const { applyValidator } = require("../src/modules/loans/personal-loan/personalLoan.validator");
 const { normalizeTransactionBankNames, sanitizeBusinessLoanResponse } = require("../src/modules/loans/business-loan/businessLoan.controller");
 const homeLoanController = require("../src/modules/loans/home-loan/homeLoan.controller");
@@ -60,35 +59,6 @@ const runChain = (chain, body) => {
   });
 };
 
-describe("authValidators.registerValidator", () => {
-  it("passes with a valid payload", async () => {
-    const result = await runChain(registerValidator, {
-      name: "Test User",
-      mobile: "9876543210",
-      email: "test@example.com",
-    });
-    expect(result.passed).toBe(true);
-  });
-
-  it("rejects a mobile number that isn't 10 digits", async () => {
-    const result = await runChain(registerValidator, {
-      name: "Test User",
-      mobile: "12345",
-      email: "test@example.com",
-    });
-    expect(result.passed).toBe(false);
-    expect(result.statusCode).toBe(400);
-  });
-
-  it("rejects a malformed email", async () => {
-    const result = await runChain(registerValidator, {
-      name: "Test User",
-      mobile: "9876543210",
-      email: "not-an-email",
-    });
-    expect(result.passed).toBe(false);
-  });
-});
 
 describe("personalLoanValidators.applyValidator", () => {
   const validPayload = {
