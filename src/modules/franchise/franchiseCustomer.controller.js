@@ -54,6 +54,20 @@ exports.verifyCustomerOtp = async (req, res, next) => {
   }
 };
 
+exports.resendCustomerOtp = async (req, res, next) => {
+  try {
+    const result = await service.resendCustomerOtp(req.franchise, req.body);
+
+    res.json({
+      success: true,
+      message: `A new OTP has been sent to ${result.mobileMasked}.`,
+      ...result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /* Saare customers — search + pagination */
 exports.list = async (req, res, next) => {
   try {

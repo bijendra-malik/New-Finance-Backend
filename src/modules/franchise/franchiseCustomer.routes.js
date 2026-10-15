@@ -4,6 +4,7 @@ const controller = require("./franchiseCustomer.controller");
 const franchiseController = require("./franchise.controller");
 const auth = require("../../middleware/auth.middleware");
 const { requireApprovedFranchise } = require("../../middleware/franchise.middleware");
+const { otpRequestLimiter } = require("../../middleware/rateLimit.middleware");
 const normalizeApplyPayload = require("../../middleware/normalizeApplyPayload.middleware");
 const { productFromParam } = require("../loans/shared/productApplyValidator");
 const {
@@ -56,6 +57,8 @@ router.post(
   franchiseCustomerOtpValidator,
   controller.verifyCustomerOtp
 );
+
+router.post("/resend-otp", auth, requireApprovedFranchise, otpRequestLimiter, controller.resendCustomerOtp);
 
 router.post(
   "/:product/applyloan",

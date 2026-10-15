@@ -31,6 +31,8 @@ const mongoose = require("mongoose");
 const FranchiseCustomer = require("../src/modules/franchise/franchiseCustomer.model");
 const Franchise = require("../src/modules/franchise/franchise.model");
 const User = require("../src/modules/auth/user.model");
+const OTP = require("../src/modules/auth/otp.model");
+const sendOTP = require("../src/utils/sendOTP");
 const customerService = require("../src/modules/franchise/franchiseCustomer.service");
 const franchiseService = require("../src/modules/franchise/franchise.service");
 const { MODELS } = require("../src/modules/loans/shared/loanModels");
@@ -138,6 +140,32 @@ describe("franchise customer register", () => {
       _id: OTHER_ID,
       franchise: "frn-id",
     });
+  });
+});
+
+describe("franchise customer OTP resend", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resends an OTP for the same unverified customer", async () => {
+    const customer = franchiseCustomerDoc();
+    FranchiseCustomer.findOne.mockResolvedValue(customer);
+    OTP.create.mockResolvedValue({});
+    sendOTP.mockResolvedValue(true);
+
+    const result = await customerService.resendCustomerOtp(FRANCHISE, {
+      franchiseCustomerId: FC_ID,
+    });
+
+    expect(OTP.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mobile: customer.mobile,
+        role: USER_ROLE.CUSTOMER,
+        franchise: FRANCHISE._id,
+        franchiseCustomer: customer._id,
+      })
+    );
+    expect(sendOTP).toHaveBeenCalledWith(customer.mobile, expect.any(String));
+    expect(result).toMatchObject({ nextStep: "verify-otp" });
   });
 });
 

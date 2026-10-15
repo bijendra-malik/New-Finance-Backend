@@ -166,6 +166,32 @@ const verifyCustomerOtp = async (franchise, body = {}) => {
   };
 };
 
+const resendCustomerOtp = async (franchise, body = {}) => {
+  const payload = unwrap(body);
+  const customer = await getCustomerDoc(franchise, payload.franchiseCustomerId);
+
+  if (customer.isVerified) {
+    throw conflict("This customer's mobile is already verified.");
+  }
+
+  const result = await entryService.startEntry({
+    role: USER_ROLE.CUSTOMER,
+    body: {
+      name: customer.fullName,
+      email: customer.email,
+      mobile: customer.mobile,
+      dob: customer.dob,
+      panNumber: customer.panNumber,
+      continent: "",
+      country: "",
+    },
+    franchise,
+    franchiseCustomer: customer,
+  });
+
+  return { mobileMasked: result.mobileMasked, nextStep: "verify-otp" };
+};
+
 /* --------------------------------------------------------------- read -- */
 
 const getCustomerDoc = async (franchise, id) => {
@@ -351,6 +377,7 @@ const getCustomerLoan = async (franchise, id, applicationNo) => {
 module.exports = {
   registerCustomer,
   verifyCustomerOtp,
+  resendCustomerOtp,
   listCustomers,
   getCustomer,
   getCustomerDoc,
