@@ -2,6 +2,11 @@ const { LOAN_PRODUCTS } = require("./loanProducts");
 const { MODELS } = require("./loanModels");
 const { USER_ROLE } = require("../../../constants/roles");
 const { nextLoanApplicationNo } = require("../../../utils/sequence");
+const User = require("../../auth/user.model");
+const {
+  findEntryDetailMismatch,
+  ACCOUNT_NOT_FOUND_MESSAGE,
+} = require("../../auth/entryDetails");
 const {
   LOAN_FIELD_NAMES,
   EXPOSURE_FIELD_NAMES,
@@ -266,6 +271,24 @@ const createLoanController = (productKey) => {
           });
         }
 
+        /*
+        Entry (`POST /api/auth/:product`) ke mobile OTP par jo name / mobile /
+        email / DOB / PAN verify hue the wahi form me hone chahiye — warna token
+        ek customer ka aur application kisi doosre ka ban jaata hai. Unified door
+        par yahi check middleware ke roop me lagta hai (entryDetails.middleware.js).
+        */
+        const account = req.user ? await User.findById(req.user.id) : null;
+
+        if (!account) {
+          return res.status(401).json({ success: false, message: ACCOUNT_NOT_FOUND_MESSAGE });
+        }
+
+        const mismatch = findEntryDetailMismatch(account, req.body);
+
+        if (mismatch) {
+          return res.status(400).json({ success: false, message: mismatch.message });
+        }
+
         await assertNoExistingDirectApplication(Model, req.user.id);
         const applicationNo = await nextLoanApplicationNo();
         const application = await Model.create(
@@ -303,4 +326,5 @@ module.exports = {
   buildLoanDocument,
   sanitizeLoanResponse,
   assertNoExistingDirectApplication,
+  sectionFieldNames,
 };
