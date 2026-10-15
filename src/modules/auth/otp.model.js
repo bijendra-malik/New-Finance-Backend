@@ -106,6 +106,11 @@ const otpSchema = new mongoose.Schema(
       ref: "FranchiseCustomer",
       default: null,
     },
+
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
