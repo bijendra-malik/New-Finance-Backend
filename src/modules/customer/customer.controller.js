@@ -7,27 +7,22 @@ Customer endpoints.
 */
 
 /*
-Loan form ka CONFIG
+Loan form ka SCREEN
 GET /api/customer/loan-apply?product=personal&employmentType=Salaried
 
-Verify-otp ke baad client yahi call karta hai: us product me kaunse field aate
-hain (sections), kya limits hain, aur kaun sa field required hai. Isse form
-render hota hai — submit alag se POST /api/customer/loan-apply se hota hai.
+Verify-otp ke baad client yahi call karta hai: us employment type ke hisaab se
+kaunse field aate hain, entry par verify hui details (prefill), aur pehle se koi
+application bhari hui hai ya nahi. Submit alag se POST /api/customer/loan-apply
+se hota hai.
 */
 exports.loanApplyForm = async (req, res, next) => {
   try {
-    const form = customerService.getLoanApplyForm(
-      req.query.product ?? req.body?.product,
-      req.query.employmentType
-    );
-    const data = await customerService.getCustomerProductApplication(req.user.id, form.product);
-
-    res.json({
-      success: true,
-      product: form.product,
-      loanType: data?.loanType || form.loanType,
-      data,
+    const screen = await customerService.getLoanApplyScreen(req.user.id, {
+      product: req.query.product ?? req.body?.product,
+      employmentType: req.query.employmentType ?? req.body?.employmentType,
     });
+
+    res.json({ success: true, ...screen });
   } catch (error) {
     next(error);
   }

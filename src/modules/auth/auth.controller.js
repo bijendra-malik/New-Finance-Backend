@@ -4,7 +4,7 @@ const entryService = require("./entry.service");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { USER_ROLE } = require("../../constants/roles");
 const {
-  FRANCHISE_PROFILE_FIELDS,
+  FRANCHISE_ONLY_PROFILE_FIELDS,
   sanitizeFranchiseProfile,
 } = require("../franchise/franchiseProfile");
 
@@ -42,7 +42,7 @@ exports.entry = async (req, res, next) => {
   try {
     const product = String(req.body.product || "").trim();
 
-    const { mobileMasked } = await entryService.startEntry({
+    const { mobile, mobileMasked } = await entryService.startEntry({
       role: USER_ROLE.CUSTOMER,
       product,
       body: req.body,
@@ -50,9 +50,14 @@ exports.entry = async (req, res, next) => {
 
     const config = LOAN_PRODUCTS[product];
 
+    /*
+    `mobile` poora number hai (verify-otp me yahi bhejna hota hai) aur
+    `mobileMasked` screen par dikhane ke liye. Message hamesha masked rehta hai.
+    */
     res.status(200).json({
       success: true,
       message: `OTP sent to ${mobileMasked}`,
+      mobile,
       mobileMasked,
       product,
       loanType: config ? config.loanType : "",
@@ -111,7 +116,9 @@ exports.customerProfile = async (req, res, next) => {
     const customer = user ? user.toObject() : null;
 
     if (customer) {
-      FRANCHISE_PROFILE_FIELDS.forEach((field) => delete customer[field]);
+      /* Sirf franchise wale fields hatta hai — customer ke apne verified
+         panNumber / dob / address profile me rehte hain. */
+      FRANCHISE_ONLY_PROFILE_FIELDS.forEach((field) => delete customer[field]);
       if (customer.role === USER_ROLE.LEGACY_CUSTOMER) {
         customer.role = USER_ROLE.CUSTOMER;
       }

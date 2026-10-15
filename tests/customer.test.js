@@ -5,6 +5,10 @@ const customerController = require("../src/modules/customer/customer.controller"
 const { describeLoanStatus, MODELS } = require("../src/modules/loans/shared/loanStatus");
 const { assertNoExistingDirectApplication } = require("../src/modules/loans/shared/loan.service");
 const normalizeApplyPayload = require("../src/middleware/normalizeApplyPayload.middleware");
+const verifyEntryDetails = require("../src/middleware/entryDetails.middleware");
+const personalLoanController = require("../src/modules/loans/personal-loan/personalLoan.controller");
+const { findEntryDetailMismatch } = require("../src/modules/auth/entryDetails");
+const User = require("../src/modules/auth/user.model");
 
 /** Runs a chain of middlewares (like the real route) and reports the outcome. */
 const runPipeline = (chain, body) =>
@@ -155,23 +159,19 @@ describe("customerController.loanApplyForm", () => {
     jest.restoreAllMocks();
   });
 
-  it("returns only the selected product's submitted data and minimal metadata", async () => {
-    const savedApplication = {
-      loanType: "Personal Loan",
-      applicationNo: "LOAN000013",
-      loanAmount: 500000,
-      sections: { loanRequirements: { loanAmount: 500000 } },
-    };
-    jest.spyOn(customerService, "getLoanApplyForm").mockReturnValue({
+  it("returns the form screen — fields, entry prefill and the already-applied flag", async () => {
+    jest.spyOn(customerService, "getLoanApplyScreen").mockResolvedValue({
       product: "personal",
       loanType: "Personal Loan",
-      route: "/api/personal-loan",
-      sections: { loanBasics: ["loanAmount"] },
-      submitTo: "POST /api/customer/loan-apply",
+      employmentTypes: ["Salaried"],
+      employmentType: "Salaried",
+      fields: { loanRequirements: ["loanAmount", "loanTenure"] },
+      prefill: { fullName: "Rahul Sharma", mobile: "9876543210" },
+      alreadyApplied: false,
+      canApply: true,
+      applicationNo: null,
+      data: null,
     });
-    jest
-      .spyOn(customerService, "getCustomerProductApplication")
-      .mockResolvedValue(savedApplication);
 
     const response = {
       json: jest.fn(),
@@ -189,8 +189,353 @@ describe("customerController.loanApplyForm", () => {
       success: true,
       product: "personal",
       loanType: "Personal Loan",
-      data: savedApplication,
+      employmentTypes: ["Salaried"],
+      employmentType: "Salaried",
+      fields: { loanRequirements: ["loanAmount", "loanTenure"] },
+      prefill: { fullName: "Rahul Sharma", mobile: "9876543210" },
+      alreadyApplied: false,
+      canApply: true,
+      applicationNo: null,
+      data: null,
     });
+    expect(customerService.getLoanApplyScreen).toHaveBeenCalledWith("customer-id", {
+      product: "personal",
+      employmentType: undefined,
+    });
+  });
+});
+
+describe("customerService.getLoanApplyScreen", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const mockAccount = (account = {}) =>
+    jest.spyOn(User, "findById").mockReturnValue({ select: () => Promise.resolve(account) });
+
+  it("returns the saved application + that employment type's fields", async () => {
+    jest.spyOn(MODELS.personal, "findOne").mockResolvedValue({
+      toObject: () => ({
+        _id: "application-id",
+        user: "customer-id",
+        applicationNo: "LOAN000013",
+        loanType: "Personal Loan",
+        loanAmount: 500000,
+        loanTenure: 3,
+        employmentType: "Salaried",
+        fullName: "Rahul Sharma",
+        mobile: "9876543210",
+        status: "Submitted",
+      }),
+    });
+    mockAccount({
+      name: "Rahul Sharma",
+      mobile: "9876543210",
+      email: "rahul@example.com",
+      dob: new Date("1995-05-15T00:00:00.000Z"),
+      panNumber: "ABCDE1234F",
+    });
+
+    const screen = await customerService.getLoanApplyScreen("customer-id", { product: "personal" });
+
+    expect(screen).toMatchObject({
+      product: "personal",
+      loanType: "Personal Loan",
+      employmentTypes: ["Salaried"],
+      employmentType: "Salaried",
+      alreadyApplied: true,
+      canApply: false,
+      applicationNo: "LOAN000013",
+      prefill: {
+        fullName: "Rahul Sharma",
+        mobile: "9876543210",
+        dob: "1995-05-15",
+        panNumber: "ABCDE1234F",
+      },
+    });
+    expect(screen.fields.loanRequirements).toEqual(["loanAmount", "loanTenure"]);
+    expect(screen.fields.incomeDetails).toContain("monthlySalary");
+    expect(screen.data.sections.loanRequirements).toEqual({ loanAmount: 500000, loanTenure: 3 });
+  });
+
+  it("fills the entry form's empty address fields from the submitted application", async () => {
+    jest.spyOn(MODELS.business, "findOne").mockResolvedValue({
+      toObject: () => ({
+        _id: "application-id",
+        user: "customer-id",
+        applicationNo: "LOAN000047",
+        loanType: "Business Loan",
+        employmentType: "Self Employed - Business",
+        fullName: "Naya Customer Business",
+        mobile: "9876543220",
+        email: "naya.customer.business@example.com",
+        dob: "1988-11-11T00:00:00.000Z",
+        panNumber: "NEWCU1234B",
+        state: "Maharashtra",
+        city: "Mumbai",
+        pincode: "400001",
+        status: "Submitted",
+      }),
+    });
+    // Entry form me state / city / pincode nahi puchhe jaate — account par khaali hain.
+    mockAccount({
+      name: "Naya Customer Business",
+      mobile: "9876543220",
+      email: "naya.customer.business@example.com",
+      dob: new Date("1988-11-11T00:00:00.000Z"),
+      panNumber: "NEWCU1234B",
+      continent: "Asia",
+      country: "India",
+      state: "",
+      city: "",
+      pincode: "",
+    });
+
+    const screen = await customerService.getLoanApplyScreen("customer-id", { product: "business" });
+
+    expect(screen.prefill).toEqual({
+      fullName: "Naya Customer Business",
+      mobile: "9876543220",
+      email: "naya.customer.business@example.com",
+      dob: "1988-11-11",
+      panNumber: "NEWCU1234B",
+      continent: "Asia",
+      country: "India",
+      state: "Maharashtra",
+      city: "Mumbai",
+      pincode: "400001",
+    });
+  });
+
+  it("keeps the account's own value when the application has one as well", async () => {
+    jest.spyOn(MODELS.business, "findOne").mockResolvedValue({
+      toObject: () => ({
+        _id: "application-id",
+        user: "customer-id",
+        applicationNo: "LOAN000048",
+        loanType: "Business Loan",
+        employmentType: "Self Employed - Business",
+        fullName: "Application Name",
+        mobile: "9000000000",
+        state: "Karnataka",
+        city: "Bengaluru",
+        pincode: "560001",
+        status: "Submitted",
+      }),
+    });
+    mockAccount({
+      name: "Account Name",
+      mobile: "9876543210",
+      state: "Maharashtra",
+      city: "Pune",
+      pincode: "411001",
+    });
+
+    const screen = await customerService.getLoanApplyScreen("customer-id", { product: "business" });
+
+    expect(screen.prefill).toMatchObject({
+      fullName: "Account Name",
+      mobile: "9876543210",
+      state: "Maharashtra",
+      city: "Pune",
+      pincode: "411001",
+    });
+  });
+
+  it("returns no data + canApply true when nothing is applied yet", async () => {
+    jest.spyOn(MODELS.business, "findOne").mockResolvedValue(null);
+    mockAccount({ name: "Rahul Sharma", mobile: "9876543210" });
+
+    const screen = await customerService.getLoanApplyScreen("customer-id", {
+      product: "business",
+      employmentType: "Self Employed - Business",
+    });
+
+    expect(screen).toMatchObject({
+      product: "business",
+      employmentType: "Self Employed - Business",
+      alreadyApplied: false,
+      canApply: true,
+      data: null,
+    });
+    expect(screen.fields.incomeDetails).toContain("businessName");
+  });
+});
+
+describe("verifyEntryDetails (entry details vs loan form details)", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const account = {
+    name: "Rahul Sharma",
+    mobile: "9876543210",
+    email: "rahul@example.com",
+    dob: new Date("1995-05-15T00:00:00.000Z"),
+    panNumber: "ABCDE1234F",
+  };
+
+  /** Runs the middleware like the real route does. */
+  const runMiddleware = (body) =>
+    new Promise((resolve) => {
+      const req = { body, user: { id: "customer-id" } };
+      const res = {
+        statusCode: 200,
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        json(payload) {
+          resolve({ next: false, statusCode: this.statusCode, payload, req });
+        },
+      };
+
+      verifyEntryDetails(req, res, (error) => resolve({ next: true, error, req }));
+    });
+
+  it("passes when the form carries the same verified details", async () => {
+    jest.spyOn(User, "findById").mockResolvedValue(account);
+
+    const result = await runMiddleware({
+      fullName: "rahul sharma",
+      mobile: "9876543210",
+      email: "Rahul@Example.com",
+      dob: "1995-05-15",
+      panNumber: "abcde1234f",
+    });
+
+    expect(result.next).toBe(true);
+  });
+
+  it("fills a field the form did not send from the verified account", async () => {
+    jest.spyOn(User, "findById").mockResolvedValue(account);
+
+    const result = await runMiddleware({ product: "personal", loanAmount: 500000 });
+
+    expect(result.next).toBe(true);
+    expect(result.req.body).toMatchObject({
+      fullName: "Rahul Sharma",
+      mobile: "9876543210",
+      email: "rahul@example.com",
+      panNumber: "ABCDE1234F",
+    });
+    expect(result.req.body.dob).toEqual(account.dob);
+  });
+
+  it("rejects a different mobile number with 400", async () => {
+    jest.spyOn(User, "findById").mockResolvedValue(account);
+
+    const result = await runMiddleware({ product: "personal", mobile: "9999999902" });
+
+    expect(result.next).toBe(false);
+    expect(result.statusCode).toBe(400);
+    expect(result.payload.success).toBe(false);
+    expect(result.payload.message).toContain("Mobile number does not match");
+  });
+
+  it("rejects a different PAN and a different date of birth", async () => {
+    jest.spyOn(User, "findById").mockResolvedValue(account);
+
+    const pan = await runMiddleware({ product: "personal", panNumber: "ZZZZZ9999Z" });
+    expect(pan.statusCode).toBe(400);
+    expect(pan.payload.message).toContain("PAN number does not match");
+
+    const dob = await runMiddleware({ product: "personal", dob: "1915-05-22" });
+    expect(dob.statusCode).toBe(400);
+    expect(dob.payload.message).toContain("Date of birth does not match");
+  });
+});
+
+describe("findEntryDetailMismatch (shared rule used by both apply doors)", () => {
+  const account = {
+    name: "Rahul Sharma",
+    mobile: "9876543210",
+    email: "rahul@example.com",
+    dob: new Date("1995-05-15T00:00:00.000Z"),
+    panNumber: "ABCDE1234F",
+  };
+
+  it("returns null and fills the omitted fields from the verified account", () => {
+    const body = { product: "personal", loanAmount: 500000 };
+
+    expect(findEntryDetailMismatch(account, body)).toBeNull();
+    expect(body).toMatchObject({
+      fullName: "Rahul Sharma",
+      mobile: "9876543210",
+      email: "rahul@example.com",
+      panNumber: "ABCDE1234F",
+    });
+    expect(body.dob).toEqual(account.dob);
+  });
+
+  it("ignores case / spacing and compares the DOB by date, not by string", () => {
+    expect(
+      findEntryDetailMismatch(account, {
+        fullName: "  rahul   sharma ",
+        mobile: " 9876543210 ",
+        email: "RAHUL@example.com",
+        panNumber: "abcde1234f",
+        dob: "1995-05-15T00:00:00.000Z",
+      })
+    ).toBeNull();
+  });
+
+  it("reports the mismatched field with its verified value", () => {
+    expect(findEntryDetailMismatch(account, { mobile: "9999999902" })).toMatchObject({
+      field: "mobile",
+      message: expect.stringContaining("Please use the same mobile number (9876543210)"),
+    });
+    expect(findEntryDetailMismatch(account, { fullName: "Koi Aur" }).field).toBe("fullName");
+    expect(findEntryDetailMismatch(account, { email: "other@example.com" }).field).toBe("email");
+    expect(findEntryDetailMismatch(account, { panNumber: "ZZZZZ9999Z" }).field).toBe("panNumber");
+    expect(findEntryDetailMismatch(account, { dob: "1915-05-22" }).field).toBe("dob");
+  });
+
+  it("skips the check when the account itself has no verified value", () => {
+    expect(findEntryDetailMismatch({ mobile: "9876543210" }, { panNumber: "ZZZZZ9999Z" })).toBeNull();
+  });
+});
+
+describe("per-product door (POST /api/personal-loan/apply) enforces the same rule", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("rejects a mismatched mobile with 400 before touching the database", async () => {
+    jest.spyOn(User, "findById").mockResolvedValue({
+      name: "Rahul",
+      mobile: "9876543210",
+      email: "rahul@example.com",
+      dob: new Date("1995-05-15T00:00:00.000Z"),
+      panNumber: "ABCDE1234F",
+    });
+    const exists = jest.spyOn(MODELS.personal, "exists");
+    const create = jest.spyOn(MODELS.personal, "create");
+
+    const res = {
+      statusCode: 200,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.body = payload;
+        return this;
+      },
+    };
+    const next = jest.fn();
+
+    await personalLoanController.apply(
+      { body: { ...validPersonal, mobile: "9999999902" }, user: { id: "customer-id", role: "Customer" } },
+      res,
+      next
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toContain("Mobile number does not match");
+    expect(exists).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

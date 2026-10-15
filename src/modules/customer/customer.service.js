@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 
+const User = require("../auth/user.model");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
@@ -7,20 +8,15 @@ const {
   buildLoanDocument,
   sanitizeLoanResponse,
   assertNoExistingDirectApplication,
+  sectionFieldNames,
 } = require("../loans/shared/loan.service");
-const {
-  LOAN_FIELD_NAMES,
-  PERSONAL_DETAILS_FIELD_NAMES,
-  EXPOSURE_FIELD_NAMES,
-  loanRequirementFieldNames,
-  incomeFieldNamesForEmploymentType,
-} = require("../loans/shared/loanSchema");
 
 /*
 ==========================================
 Customer side service.
 
-  createCustomerLoan     POST  /api/customer/loan-apply   (direct application)
+  getLoanApplyScreen     GET   /api/customer/loan-apply    (form ka config + bhari hui application)
+  createCustomerLoan     POST  /api/customer/loan-apply       (direct application)
   listCustomerLoans      GET   /api/customer/loans         (grouped, optional ?status=)
   getCustomerLoanDetail  GET   /api/customer/loans/:applicationNo
   getCustomerLoansByPan  GET   /api/customer/loan-status?panNumber=
@@ -74,60 +70,121 @@ const ageInYears = (birthDate) => {
 };
 
 /*
-Loan form ka CONFIG — kis product me kaunse field aate hain aur kya limits hain.
+Loan form ka SCREEN — ek hi call me jo bhi form ko chahiye.
 
   GET /api/customer/loan-apply?product=personal&employmentType=Salaried
 
-Form isi se render hota hai; submit alag se POST /api/customer/loan-apply se hota
-hai. Field names wahi hain jo product ka schema aur validator use karte hain
-(loanSchema.js se), isliye form aur backend kabhi out of sync nahi jaate.
-*/
-const getLoanApplyForm = (rawProduct, rawEmploymentType = "") => {
-  const product = cleanText(rawProduct);
-  const config = LOAN_PRODUCTS[product];
-  if (!config) throw badRequest("A valid loan product is required");
+  product / loanType        kis loan ka form hai
+  employmentTypes           dropdown ke options
+  employmentType            chuna hua type (query -> bhari hui application -> default)
+  fields                    US employment type ke hisaab se section-wise field names
+  prefill                   entry par verify hui identity details (form inhi se bharta hai)
+  alreadyApplied / canApply pehle se apply kiya hua hai ya nahi
+  data                      bhari hui application (na ho to null)
 
-  // Employment type ke hisaab se income fields badalte hain (Salaried vs Business).
+Field names wahi hain jo product ka schema aur validator use karte hain
+(sectionFieldNames se) — isliye form aur backend out of sync nahi jaate, aur jo
+fields form ko chahiye wahi response me aate hain (koi limits/message ka static
+stock nahi).
+*/
+const getLoanApplyScreen = async (
+  customerId,
+  { product: rawProduct, employmentType: rawEmploymentType } = {}
+) => {
+  const product = resolveProduct({ product: rawProduct });
+  const config = LOAN_PRODUCTS[product];
+
+  const data = await getCustomerProductApplication(customerId, product);
+
+  const employmentTypes = config.employmentTypes || [];
   const employmentType =
     cleanText(rawEmploymentType) ||
+    cleanText(data?.employmentType) ||
     cleanText(config.employmentTypeDefault) ||
-    cleanText(config.employmentTypes?.[0]);
+    cleanText(employmentTypes[0]);
 
   return {
     product,
-    loanType: config.loanType,
-    route: config.route,
-    employmentTypes: config.employmentTypes || [],
-    employmentTypeRequired: !!config.employmentTypeRequired,
-    employmentTypeDefault: employmentType,
-    income: config.income,
-
-    loanAmountRequired: config.loanAmountRequired !== false,
-    loanAmountMin: config.loanAmountMin ?? null,
-    loanAmountMessage: config.loanAmountMessage || "",
-
-    loanTenureRequired: config.loanTenureRequired !== false,
-    loanTenureMin: config.loanTenureMin ?? null,
-    loanTenureMax: config.loanTenureMax ?? null,
-    loanTenureMessage: config.loanTenureMessage || "",
-
-    personalDetailsRequired: !!config.personalDetailsRequired,
-    exposureRequired: !!config.exposureRequired,
-    multiValueFields: config.multiValueFields || [],
-
-    /* Form ke sections — kaunse field kis hisse me aate hain. */
-    sections: {
-      loanBasics: LOAN_FIELD_NAMES,
-      loanRequirements: config.loanRequirements
-        ? loanRequirementFieldNames[config.loanRequirements] || []
-        : null,
-      income: incomeFieldNamesForEmploymentType(employmentType),
-      existingLoanExposure: EXPOSURE_FIELD_NAMES,
-      personalDetails: PERSONAL_DETAILS_FIELD_NAMES,
-    },
-
-    submitTo: "POST /api/customer/loan-apply",
+    loanType: data?.loanType || config.loanType,
+    employmentTypes,
+    employmentType,
+    fields: sectionFieldNames(config, employmentType),
+    prefill: completePrefill(await getEntryPrefill(customerId), data),
+    alreadyApplied: Boolean(data),
+    canApply: !data,
+    applicationNo: data?.applicationNo || null,
+    data,
   };
+};
+
+/**
+ * Entry par verify hui identity details — form inhi se prefill hota hai.
+ * (Loan apply karte waqt inhi details ka match hona bhi zaroori hai —
+ *  middleware/entryDetails.middleware.js.)
+ */
+const getEntryPrefill = async (customerId) => {
+  const account = await User.findById(customerId).select(
+    "name mobile email dob panNumber continent country state city pincode"
+  );
+
+  if (!account) return null;
+
+  return {
+    fullName: account.name || "",
+    mobile: account.mobile || "",
+    email: account.email || "",
+    dob: account.dob ? account.dob.toISOString().slice(0, 10) : "",
+    panNumber: account.panNumber || "",
+    continent: account.continent || "",
+    country: account.country || "",
+    state: account.state || "",
+    city: account.city || "",
+    pincode: account.pincode || "",
+  };
+};
+
+/**
+ * Entry form me state / city / pincode nahi puchhe jaate (sirf continent + country),
+ * isliye account par ye khaali rehte hain — jabki loan form me ye fields hote hain
+ * aur submitted application par bhari hui values maujood hoti hain.
+ *
+ * Isliye jab application ho, to prefill ko usi application se complete karo, taaki
+ * response me `prefill` aur `data` aapas me match karein aur already-applied screen
+ * par address khaali na dikhe. Account ki value pehle jeetegi — application se sirf
+ * khaali field bharti hai.
+ */
+const COMPLETABLE_PREFILL_FIELDS = [
+  "fullName",
+  "mobile",
+  "email",
+  "dob",
+  "panNumber",
+  "state",
+  "city",
+  "pincode",
+];
+
+const asDateOnly = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+};
+
+const completePrefill = (prefill, application) => {
+  if (!prefill || !application) return prefill;
+
+  const merged = { ...prefill };
+
+  COMPLETABLE_PREFILL_FIELDS.forEach((field) => {
+    if (cleanText(merged[field])) return;
+
+    const value = application[field];
+    if (value === undefined || value === null || value === "") return;
+
+    merged[field] = field === "dob" ? asDateOnly(value) : cleanText(value);
+  });
+
+  return merged;
 };
 
 /**
@@ -297,7 +354,8 @@ const getCustomerSummary = async (customerId) => {
 };
 
 module.exports = {
-  getLoanApplyForm,
+  getLoanApplyScreen,
+  getEntryPrefill,
   createCustomerLoan,
   getCustomerProductApplication,
   listCustomerLoans,

@@ -4,6 +4,7 @@ const customerController = require("./customer.controller");
 const auth = require("../../middleware/auth.middleware");
 const { requireCustomer } = require("../../middleware/franchise.middleware");
 const normalizeApplyPayload = require("../../middleware/normalizeApplyPayload.middleware");
+const verifyEntryDetails = require("../../middleware/entryDetails.middleware");
 const { customerLoanApplyValidator } = require("./customer.validator");
 
 /*
@@ -23,8 +24,12 @@ are — this is an additional, single-door entry point for the dashboard.
 */
 
 /*
-Loan form ka CONFIG (GET) — kis product me kaunse field aate hain.
-Verify-otp ke baad client yahi call karta hai, phir form bharkar POST karta hai.
+GET  /loan-apply   form ka config — kis employment type me kaunse field +
+                   entry par verify hui details (prefill) + bhari hui application
+POST /loan-apply   unified apply, `product` in the body
+
+`verifyEntryDetails` form ki identity details ko entry par verify hui details se
+match karta hai (name / mobile / email / DOB / PAN) — mismatch par 400.
 */
 router.get("/loan-apply", auth, requireCustomer, customerController.loanApplyForm);
 
@@ -34,6 +39,7 @@ router.post(
   requireCustomer,
   normalizeApplyPayload,
   customerLoanApplyValidator,
+  verifyEntryDetails,
   customerController.loanApply
 );
 
