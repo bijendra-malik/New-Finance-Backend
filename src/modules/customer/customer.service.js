@@ -148,10 +148,11 @@ const createCustomerLoan = async (customerId, body = {}) => {
   return { application: sanitizeLoanResponse(product, application), product };
 };
 
-/** Whether this customer has already applied for the selected direct product. */
-const hasAppliedForProduct = async (customerId, product) => {
+/** Existing direct application for the selected product, if one exists. */
+const getCustomerProductApplication = async (customerId, product) => {
   const key = resolveProduct({ product });
-  return Boolean(await MODELS[key].exists({ user: customerId, franchise: null }));
+  const application = await MODELS[key].findOne({ user: customerId, franchise: null });
+  return application ? sanitizeLoanResponse(key, application) : null;
 };
 
 /* ------------------------------------------------------- status helpers -- */
@@ -298,7 +299,7 @@ const getCustomerSummary = async (customerId) => {
 module.exports = {
   getLoanApplyForm,
   createCustomerLoan,
-  hasAppliedForProduct,
+  getCustomerProductApplication,
   listCustomerLoans,
   getCustomerLoanDetail,
   getCustomerLoansByPan,

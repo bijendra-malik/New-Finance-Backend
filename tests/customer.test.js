@@ -1,6 +1,7 @@
 const { buildProductApplyValidator } = require("../src/modules/loans/shared/productApplyValidator");
 const { franchiseLoanApplyValidator } = require("../src/modules/franchise/franchise.validator");
 const customerService = require("../src/modules/customer/customer.service");
+const customerController = require("../src/modules/customer/customer.controller");
 const { describeLoanStatus, MODELS } = require("../src/modules/loans/shared/loanStatus");
 const { assertNoExistingDirectApplication } = require("../src/modules/loans/shared/loan.service");
 const normalizeApplyPayload = require("../src/middleware/normalizeApplyPayload.middleware");
@@ -100,26 +101,43 @@ describe("customerService.resolveProduct", () => {
   });
 });
 
-describe("customerService.hasAppliedForProduct", () => {
+describe("customerService.getCustomerProductApplication", () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  it("checks only the selected product and reports its existing direct application", async () => {
-    const exists = jest.spyOn(MODELS.personal, "exists").mockResolvedValue({ _id: "application-id" });
+  it("returns the selected product's saved application", async () => {
+    const findOne = jest.spyOn(MODELS.personal, "findOne").mockResolvedValue({
+      toObject: () => ({
+        _id: "application-id",
+        user: "customer-id",
+        loanType: "Personal Loan",
+        loanAmount: 500000,
+        loanTenure: 3,
+        employmentType: "Salaried",
+        fullName: "Rahul Sharma",
+        mobile: "9876543210",
+        status: "Submitted",
+      }),
+    });
 
-    await expect(customerService.hasAppliedForProduct("customer-id", "personal")).resolves.toBe(true);
-    expect(exists).toHaveBeenCalledWith({ user: "customer-id", franchise: null });
+    await expect(customerService.getCustomerProductApplication("customer-id", "personal")).resolves.toMatchObject({
+      _id: "application-id",
+      loanType: "Personal Loan",
+      loanAmount: 500000,
+      sections: {
+        loanRequirements: { loanAmount: 500000, loanTenure: 3 },
+        personalDetails: { fullName: "Rahul Sharma", mobile: "9876543210" },
+      },
+    });
+    expect(findOne).toHaveBeenCalledWith({ user: "customer-id", franchise: null });
   });
 
-  it("keeps other loan products independently applicable", async () => {
-    const personalExists = jest.spyOn(MODELS.personal, "exists").mockResolvedValue({ _id: "personal-id" });
-    const businessExists = jest.spyOn(MODELS.business, "exists").mockResolvedValue(null);
+  it("returns null when no application exists for the selected product", async () => {
+    const findOne = jest.spyOn(MODELS.business, "findOne").mockResolvedValue(null);
 
-    await expect(customerService.hasAppliedForProduct("customer-id", "personal")).resolves.toBe(true);
-    await expect(customerService.hasAppliedForProduct("customer-id", "business")).resolves.toBe(false);
-    expect(personalExists).toHaveBeenCalledTimes(1);
-    expect(businessExists).toHaveBeenCalledTimes(1);
+    await expect(customerService.getCustomerProductApplication("customer-id", "business")).resolves.toBeNull();
+    expect(findOne).toHaveBeenCalledWith({ user: "customer-id", franchise: null });
   });
 
   it("blocks a second direct application for the same product with HTTP 409", async () => {
@@ -128,6 +146,50 @@ describe("customerService.hasAppliedForProduct", () => {
     await expect(assertNoExistingDirectApplication(MODELS.personal, "customer-id")).rejects.toMatchObject({
       statusCode: 409,
       message: "You have already applied for this loan product.",
+    });
+  });
+});
+
+describe("customerController.loanApplyForm", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("returns only the selected product's submitted data and minimal metadata", async () => {
+    const savedApplication = {
+      loanType: "Personal Loan",
+      applicationNo: "LOAN000013",
+      loanAmount: 500000,
+      sections: { loanRequirements: { loanAmount: 500000 } },
+    };
+    jest.spyOn(customerService, "getLoanApplyForm").mockReturnValue({
+      product: "personal",
+      loanType: "Personal Loan",
+      route: "/api/personal-loan",
+      sections: { loanBasics: ["loanAmount"] },
+      submitTo: "POST /api/customer/loan-apply",
+    });
+    jest
+      .spyOn(customerService, "getCustomerProductApplication")
+      .mockResolvedValue(savedApplication);
+
+    const response = {
+      json: jest.fn(),
+    };
+    const next = jest.fn();
+
+    await customerController.loanApplyForm(
+      { query: { product: "personal" }, user: { id: "customer-id" } },
+      response,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.json).toHaveBeenCalledWith({
+      success: true,
+      product: "personal",
+      loanType: "Personal Loan",
+      data: savedApplication,
     });
   });
 });
