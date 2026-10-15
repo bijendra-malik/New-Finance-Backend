@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-const User = require("../auth/user.model");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
@@ -8,7 +7,6 @@ const {
   buildLoanDocument,
   sanitizeLoanResponse,
   assertNoExistingDirectApplication,
-  sectionFieldNames,
 } = require("../loans/shared/loan.service");
 
 /*
@@ -74,117 +72,46 @@ Loan form ka SCREEN — ek hi call me jo bhi form ko chahiye.
 
   GET /api/customer/loan-apply?product=personal&employmentType=Salaried
 
-  product / loanType        kis loan ka form hai
-  employmentTypes           dropdown ke options
-  employmentType            chuna hua type (query -> bhari hui application -> default)
-  fields                    US employment type ke hisaab se section-wise field names
-  prefill                   entry par verify hui identity details (form inhi se bharta hai)
   alreadyApplied / canApply pehle se apply kiya hua hai ya nahi
-  data                      bhari hui application (na ho to null)
-
-Field names wahi hain jo product ka schema aur validator use karte hain
-(sectionFieldNames se) — isliye form aur backend out of sync nahi jaate, aur jo
-fields form ko chahiye wahi response me aate hain (koi limits/message ka static
-stock nahi).
+  data                      existing application (na ho to null); empty fields
+                            aur duplicate section snapshot hata diye jaate hain
 */
 const getLoanApplyScreen = async (
   customerId,
-  { product: rawProduct, employmentType: rawEmploymentType } = {}
+  { product: rawProduct } = {}
 ) => {
   const product = resolveProduct({ product: rawProduct });
-  const config = LOAN_PRODUCTS[product];
-
-  const data = await getCustomerProductApplication(customerId, product);
-
-  const employmentTypes = config.employmentTypes || [];
-  const employmentType =
-    cleanText(rawEmploymentType) ||
-    cleanText(data?.employmentType) ||
-    cleanText(config.employmentTypeDefault) ||
-    cleanText(employmentTypes[0]);
+  const data = compactLoanApplication(await getCustomerProductApplication(customerId, product));
 
   return {
     product,
-    loanType: data?.loanType || config.loanType,
-    employmentTypes,
-    employmentType,
-    fields: sectionFieldNames(config, employmentType),
-    prefill: completePrefill(await getEntryPrefill(customerId), data),
     alreadyApplied: Boolean(data),
     canApply: !data,
-    applicationNo: data?.applicationNo || null,
     data,
   };
 };
 
-/**
- * Entry par verify hui identity details — form inhi se prefill hota hai.
- * (Loan apply karte waqt inhi details ka match hona bhi zaroori hai —
- *  middleware/entryDetails.middleware.js.)
- */
-const getEntryPrefill = async (customerId) => {
-  const account = await User.findById(customerId).select(
-    "name mobile email dob panNumber continent country state city pincode"
-  );
+const compactLoanApplication = (application) => {
+  if (!application) return null;
 
-  if (!account) return null;
+  const compact = { ...application };
+  delete compact.sections;
+  delete compact._id;
+  delete compact.user;
+  delete compact.__v;
 
-  return {
-    fullName: account.name || "",
-    mobile: account.mobile || "",
-    email: account.email || "",
-    dob: account.dob ? account.dob.toISOString().slice(0, 10) : "",
-    panNumber: account.panNumber || "",
-    continent: account.continent || "",
-    country: account.country || "",
-    state: account.state || "",
-    city: account.city || "",
-    pincode: account.pincode || "",
-  };
-};
-
-/**
- * Entry form me state / city / pincode nahi puchhe jaate (sirf continent + country),
- * isliye account par ye khaali rehte hain — jabki loan form me ye fields hote hain
- * aur submitted application par bhari hui values maujood hoti hain.
- *
- * Isliye jab application ho, to prefill ko usi application se complete karo, taaki
- * response me `prefill` aur `data` aapas me match karein aur already-applied screen
- * par address khaali na dikhe. Account ki value pehle jeetegi — application se sirf
- * khaali field bharti hai.
- */
-const COMPLETABLE_PREFILL_FIELDS = [
-  "fullName",
-  "mobile",
-  "email",
-  "dob",
-  "panNumber",
-  "state",
-  "city",
-  "pincode",
-];
-
-const asDateOnly = (value) => {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
-};
-
-const completePrefill = (prefill, application) => {
-  if (!prefill || !application) return prefill;
-
-  const merged = { ...prefill };
-
-  COMPLETABLE_PREFILL_FIELDS.forEach((field) => {
-    if (cleanText(merged[field])) return;
-
-    const value = application[field];
-    if (value === undefined || value === null || value === "") return;
-
-    merged[field] = field === "dob" ? asDateOnly(value) : cleanText(value);
+  Object.entries(compact).forEach(([key, value]) => {
+    if (
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0)
+    ) {
+      delete compact[key];
+    }
   });
 
-  return merged;
+  return compact;
 };
 
 /**
@@ -355,7 +282,6 @@ const getCustomerSummary = async (customerId) => {
 
 module.exports = {
   getLoanApplyScreen,
-  getEntryPrefill,
   createCustomerLoan,
   getCustomerProductApplication,
   listCustomerLoans,

@@ -7,19 +7,16 @@ Customer endpoints.
 */
 
 /*
-Loan form ka SCREEN
-GET /api/customer/loan-apply?product=personal&employmentType=Salaried
+Customer application status + existing application
+GET /api/customer/loan-apply?product=personal
 
-Verify-otp ke baad client yahi call karta hai: us employment type ke hisaab se
-kaunse field aate hain, entry par verify hui details (prefill), aur pehle se koi
-application bhari hui hai ya nahi. Submit alag se POST /api/customer/loan-apply
-se hota hai.
+Existing application ho to uski compact details milti hain. Naya application
+submit alag se POST /api/customer/loan-apply se hota hai.
 */
 exports.loanApplyForm = async (req, res, next) => {
   try {
     const screen = await customerService.getLoanApplyScreen(req.user.id, {
       product: req.query.product ?? req.body?.product,
-      employmentType: req.query.employmentType ?? req.body?.employmentType,
     });
 
     res.json({ success: true, ...screen });

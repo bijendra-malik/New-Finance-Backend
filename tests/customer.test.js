@@ -159,17 +159,11 @@ describe("customerController.loanApplyForm", () => {
     jest.restoreAllMocks();
   });
 
-  it("returns the form screen — fields, entry prefill and the already-applied flag", async () => {
+  it("returns a compact application status without duplicate form data", async () => {
     jest.spyOn(customerService, "getLoanApplyScreen").mockResolvedValue({
       product: "personal",
-      loanType: "Personal Loan",
-      employmentTypes: ["Salaried"],
-      employmentType: "Salaried",
-      fields: { loanRequirements: ["loanAmount", "loanTenure"] },
-      prefill: { fullName: "Rahul Sharma", mobile: "9876543210" },
       alreadyApplied: false,
       canApply: true,
-      applicationNo: null,
       data: null,
     });
 
@@ -188,19 +182,16 @@ describe("customerController.loanApplyForm", () => {
     expect(response.json).toHaveBeenCalledWith({
       success: true,
       product: "personal",
-      loanType: "Personal Loan",
-      employmentTypes: ["Salaried"],
-      employmentType: "Salaried",
-      fields: { loanRequirements: ["loanAmount", "loanTenure"] },
-      prefill: { fullName: "Rahul Sharma", mobile: "9876543210" },
       alreadyApplied: false,
       canApply: true,
-      applicationNo: null,
       data: null,
+    });
+    const payload = response.json.mock.calls[0][0];
+    ["loanType", "employmentTypes", "employmentType", "fields", "prefill", "formValues", "applicationNo"].forEach((key) => {
+      expect(payload).not.toHaveProperty(key);
     });
     expect(customerService.getLoanApplyScreen).toHaveBeenCalledWith("customer-id", {
       product: "personal",
-      employmentType: undefined,
     });
   });
 });
@@ -210,10 +201,7 @@ describe("customerService.getLoanApplyScreen", () => {
     jest.restoreAllMocks();
   });
 
-  const mockAccount = (account = {}) =>
-    jest.spyOn(User, "findById").mockReturnValue({ select: () => Promise.resolve(account) });
-
-  it("returns the saved application + that employment type's fields", async () => {
+  it("returns the saved application once without sections or empty values", async () => {
     jest.spyOn(MODELS.personal, "findOne").mockResolvedValue({
       toObject: () => ({
         _id: "application-id",
@@ -225,40 +213,41 @@ describe("customerService.getLoanApplyScreen", () => {
         employmentType: "Salaried",
         fullName: "Rahul Sharma",
         mobile: "9876543210",
+        monthlySalary: "",
+        existingBanks: [],
+        franchise: null,
         status: "Submitted",
+        sections: { loanRequirements: { loanAmount: 500000, loanTenure: 3 } },
       }),
-    });
-    mockAccount({
-      name: "Rahul Sharma",
-      mobile: "9876543210",
-      email: "rahul@example.com",
-      dob: new Date("1995-05-15T00:00:00.000Z"),
-      panNumber: "ABCDE1234F",
     });
 
     const screen = await customerService.getLoanApplyScreen("customer-id", { product: "personal" });
 
     expect(screen).toMatchObject({
       product: "personal",
-      loanType: "Personal Loan",
-      employmentTypes: ["Salaried"],
-      employmentType: "Salaried",
       alreadyApplied: true,
       canApply: false,
-      applicationNo: "LOAN000013",
-      prefill: {
+      data: {
+        applicationNo: "LOAN000013",
+        loanAmount: 500000,
+        loanTenure: 3,
+        employmentType: "Salaried",
         fullName: "Rahul Sharma",
         mobile: "9876543210",
-        dob: "1995-05-15",
-        panNumber: "ABCDE1234F",
       },
     });
-    expect(screen.fields.loanRequirements).toEqual(["loanAmount", "loanTenure"]);
-    expect(screen.fields.incomeDetails).toContain("monthlySalary");
-    expect(screen.data.sections.loanRequirements).toEqual({ loanAmount: 500000, loanTenure: 3 });
+    ["loanType", "employmentTypes", "employmentType", "fields", "prefill", "formValues", "applicationNo"].forEach((key) => {
+      expect(screen).not.toHaveProperty(key);
+    });
+    expect(screen.data).not.toHaveProperty("sections");
+    expect(screen.data).not.toHaveProperty("_id");
+    expect(screen.data).not.toHaveProperty("user");
+    expect(screen.data).not.toHaveProperty("monthlySalary");
+    expect(screen.data).not.toHaveProperty("existingBanks");
+    expect(screen.data).not.toHaveProperty("franchise");
   });
 
-  it("fills the entry form's empty address fields from the submitted application", async () => {
+  it("returns existing business details once without an additional prefill copy", async () => {
     jest.spyOn(MODELS.business, "findOne").mockResolvedValue({
       toObject: () => ({
         _id: "application-id",
@@ -275,90 +264,71 @@ describe("customerService.getLoanApplyScreen", () => {
         city: "Mumbai",
         pincode: "400001",
         status: "Submitted",
+        sections: { personalDetails: { fullName: "Naya Customer Business" } },
       }),
-    });
-    // Entry form me state / city / pincode nahi puchhe jaate — account par khaali hain.
-    mockAccount({
-      name: "Naya Customer Business",
-      mobile: "9876543220",
-      email: "naya.customer.business@example.com",
-      dob: new Date("1988-11-11T00:00:00.000Z"),
-      panNumber: "NEWCU1234B",
-      continent: "Asia",
-      country: "India",
-      state: "",
-      city: "",
-      pincode: "",
     });
 
     const screen = await customerService.getLoanApplyScreen("customer-id", { product: "business" });
 
-    expect(screen.prefill).toEqual({
+    expect(screen.data).toMatchObject({
       fullName: "Naya Customer Business",
       mobile: "9876543220",
-      email: "naya.customer.business@example.com",
-      dob: "1988-11-11",
-      panNumber: "NEWCU1234B",
-      continent: "Asia",
-      country: "India",
       state: "Maharashtra",
       city: "Mumbai",
       pincode: "400001",
     });
+    expect(screen.data).not.toHaveProperty("sections");
+    expect(screen).not.toHaveProperty("prefill");
   });
 
-  it("keeps the account's own value when the application has one as well", async () => {
+  it("preserves populated business values in the compact application", async () => {
     jest.spyOn(MODELS.business, "findOne").mockResolvedValue({
       toObject: () => ({
-        _id: "application-id",
-        user: "customer-id",
-        applicationNo: "LOAN000048",
-        loanType: "Business Loan",
+        applicationNo: "LOAN000050",
+        loanAmount: 2500000,
+        loanTenure: 5,
         employmentType: "Self Employed - Business",
-        fullName: "Application Name",
-        mobile: "9000000000",
-        state: "Karnataka",
-        city: "Bengaluru",
-        pincode: "560001",
-        status: "Submitted",
+        businessEstablishedDate: new Date("2015-06-01T00:00:00.000Z"),
+        transactionBankName: { displayName: "HDFC Bank", banks: ["HDFC Bank"] },
+        existingBanks: ["HDFC Bank", "ICICI Bank"],
+        existingLoanTypes: ["Home Loan", "Car Loan"],
+        fullName: "Testing Customer",
+        mobile: "9876543221",
+        email: "testing@example.com",
+        dob: new Date("1988-11-23T00:00:00.000Z"),
       }),
     });
-    mockAccount({
-      name: "Account Name",
-      mobile: "9876543210",
-      state: "Maharashtra",
-      city: "Pune",
-      pincode: "411001",
+
+    const screen = await customerService.getLoanApplyScreen("customer-id", {
+      product: "business",
     });
 
-    const screen = await customerService.getLoanApplyScreen("customer-id", { product: "business" });
-
-    expect(screen.prefill).toMatchObject({
-      fullName: "Account Name",
-      mobile: "9876543210",
-      state: "Maharashtra",
-      city: "Pune",
-      pincode: "411001",
+    expect(screen.data).toMatchObject({
+      loanAmount: 2500000,
+      loanTenure: 5,
+      employmentType: "Self Employed - Business",
+      businessEstablishedDate: new Date("2015-06-01T00:00:00.000Z"),
+      transactionBankName: { displayName: "HDFC Bank", banks: ["HDFC Bank"] },
+      existingBanks: ["HDFC Bank", "ICICI Bank"],
+      existingLoanTypes: ["Home Loan", "Car Loan"],
+      fullName: "Testing Customer",
     });
   });
 
   it("returns no data + canApply true when nothing is applied yet", async () => {
     jest.spyOn(MODELS.business, "findOne").mockResolvedValue(null);
-    mockAccount({ name: "Rahul Sharma", mobile: "9876543210" });
 
-    const screen = await customerService.getLoanApplyScreen("customer-id", {
-      product: "business",
-      employmentType: "Self Employed - Business",
-    });
+    const screen = await customerService.getLoanApplyScreen("customer-id", { product: "business" });
 
     expect(screen).toMatchObject({
       product: "business",
-      employmentType: "Self Employed - Business",
       alreadyApplied: false,
       canApply: true,
       data: null,
     });
-    expect(screen.fields.incomeDetails).toContain("businessName");
+    ["loanType", "employmentTypes", "employmentType", "fields", "prefill", "formValues", "applicationNo"].forEach((key) => {
+      expect(screen).not.toHaveProperty(key);
+    });
   });
 });
 
