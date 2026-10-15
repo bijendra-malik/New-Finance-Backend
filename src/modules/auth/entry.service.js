@@ -155,7 +155,14 @@ const saveAccount = async (account) => {
     await account.save();
   } catch (error) {
     if (error && error.code === 11000) {
-      throw conflict("This email or mobile is already registered. Please check your details.");
+      const field = Object.keys(error.keyValue || {})[0];
+      if (field === "email") {
+        throw conflict("This email is already linked to another customer account.");
+      }
+      if (field === "mobile") {
+        throw conflict("This mobile is already linked to another customer account.");
+      }
+      throw conflict("This customer account conflicts with an existing email or mobile.");
     }
     throw error;
   }
@@ -187,7 +194,12 @@ const upsertCustomer = async (mobile, details) => {
   }
 
   existing.name = details.name;
-  existing.email = details.email;
+  if (existing.email !== details.email) {
+    const emailOwner = await User.findOne({ email: details.email });
+    if (!emailOwner || String(emailOwner._id) === String(existing._id)) {
+      existing.email = details.email;
+    }
+  }
   existing.dob = details.dob;
   existing.panNumber = details.panNumber;
 
@@ -455,6 +467,20 @@ const verifyEntry = async ({
   }
 
   const product = role === USER_ROLE.FRANCHISE ? "" : otpData.product || "";
+  const isFranchise = role === USER_ROLE.FRANCHISE;
+
+  if (otpData.verifiedAt) {
+    const Model = isFranchise ? Franchise : User;
+    const account = await Model.findOne({ mobile: accountMobile });
+
+    if (!account) {
+      await OTP.deleteMany({ mobile: verifiedMobile });
+      throw badRequest("Account not found. Please request a new OTP.");
+    }
+
+    const payload = buildResponse({ role, account, product });
+    return issueToken ? { token: generateToken(account), ...payload } : payload;
+  }
 
   /*
   Purane (entry se pehle ke) OTP documents me details nahi hoti — unse account
@@ -472,8 +498,6 @@ const verifyEntry = async ({
     throw badRequest("Entry details not found. Please fill the form again.");
   }
 
-  const isFranchise = role === USER_ROLE.FRANCHISE;
-
   const { account } = isFranchise
     ? await upsertFranchise(accountMobile, details)
     : await upsertCustomer(accountMobile, details);
@@ -486,7 +510,8 @@ const verifyEntry = async ({
 
   await saveAccount(account);
 
-  await OTP.deleteMany({ mobile: verifiedMobile });
+  otpData.verifiedAt = new Date();
+  await otpData.save();
 
   const payload = buildResponse({ role, account, product });
 
