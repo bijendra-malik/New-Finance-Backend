@@ -33,7 +33,7 @@ describe("role-specific auth profiles", () => {
     jest.clearAllMocks();
   });
 
-  it("returns customer fields without franchise data and normalizes legacy role", async () => {
+  it("returns customer identity fields without franchise data and normalizes legacy role", async () => {
     User.findById.mockResolvedValue({
       toObject: () => ({
         _id: "user-id",
@@ -57,11 +57,17 @@ describe("role-specific auth profiles", () => {
     const { response, next } = await runProfile(authController.customerProfile);
 
     expect(next).not.toHaveBeenCalled();
+    // panNumber / dob / address customer ke APNE verified fields hain (entry form
+    // ke OTP par save hote hain) — sirf franchise wale fields hate hain.
     expect(response.payload.user).toEqual({
       _id: "user-id",
       name: "Rahul Sharma",
       role: "Customer",
       continent: "Asia",
+      panNumber: "ABCDE1234F",
+      state: "Maharashtra",
+      city: "Mumbai",
+      pincode: "400001",
     });
   });
 

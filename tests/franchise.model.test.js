@@ -37,7 +37,9 @@ describe("Franchise collection separation", () => {
   });
 
   it("no longer carries franchise fields on the customer schema", () => {
-    ["franchiseStatus", "franchiseId", "package", "businessDetails", "password", "panNumber"].forEach((field) => {
+    // `panNumber` is NOT in this list: it is a customer identity field now
+    // (saved by the mobile-OTP entry flow), not a franchise field.
+    ["franchiseStatus", "franchiseId", "package", "businessDetails", "password"].forEach((field) => {
       expect(User.schema.path(field)).toBeUndefined();
     });
 
