@@ -69,6 +69,25 @@ const otpSchema = new mongoose.Schema(
     },
 
     /*
+    Ye OTP kis kaam ka hai:
+
+      "entry"  -> loan entry / franchise entry / franchise ka customer register
+                  (account + CUST id banta hai)
+      "status" -> customer apna loan status dekhne ke liye OTP maangta hai
+                  (`POST /api/status/request-otp`)
+
+    Purpose isliye chahiye: ek mobile ka ek hi OTP doc rehta hai, aur status ka
+    OTP entry ka pending OTP uda na de (aur ulta bhi na ho). Purane (is field se
+    pehle bane) documents entry ke hi maane jaate hai — entry wale lookups
+    `{ purpose: { $ne: "status" } }` se chalte hai.
+    */
+    purpose: {
+      type: String,
+      trim: true,
+      default: "entry",
+    },
+
+    /*
     Customer entry me chuna hua loan product (LOAN_PRODUCTS key, jaise
     "personal"). Franchise entry me khaali — franchise ka koi product nahi hota.
     */

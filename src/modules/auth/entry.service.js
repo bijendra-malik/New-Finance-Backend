@@ -5,6 +5,7 @@ const sendOTP = require("../../utils/sendOTP");
 const generateToken = require("../../utils/generateToken");
 const franchisePlanService = require("../franchise/franchisePlan.service");
 const { nextCustomerId } = require("../../utils/sequence");
+const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 
@@ -62,13 +63,6 @@ const cleanText = (value) => String(value ?? "").trim();
 const unwrap = (body) =>
   body && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : body || {};
 
-/** "9876543210" -> "98******10" (response me poora number wapas nahi jaata). */
-const maskMobile = (mobile) => {
-  const value = cleanText(mobile);
-  if (value.length < 4) return value;
-  return `${value.slice(0, 2)}${"*".repeat(value.length - 4)}${value.slice(-2)}`;
-};
-
 /** Poori umar (saal me). */
 const ageInYears = (birthDate) => {
   const now = new Date();
@@ -78,8 +72,24 @@ const ageInYears = (birthDate) => {
   return age;
 };
 
-const freshOtp = () =>
-  process.env.STATIC_OTP || Math.floor(100000 + Math.random() * 900000).toString();
+/*
+Entry ka OTP khaali entry ke documents par chalta hai — status door ka OTP
+(`purpose: "status"`) isse alag rehta hai, isliye ek doosre ko replace nahi karte.
+Purane (purpose ke bina bane) documents entry ke hi maane jaate hai.
+*/
+const OTP_NOT_STATUS = { purpose: { $ne: "status" } };
+
+/*
+OTP ki koi expiry nahi hai (jaan-boojh kar).
+
+Entry ka OTP doc mobile ke saath pada rehta hai jab tak koi naya entry usi mobile
+ka OTP replace na kar de, aur wahi OTP jitni baar chaho verify kiya ja sakta hai —
+lamba testing isi wajah se rukta nahi. Isliye verify me sirf OTP value match hoti
+hai, koi "purana ho gaya" check nahi.
+
+(Bahut purane OTP documents par jo TTL index lagā tha wo boot par hata diya jaata
+hai — config/database.js — warna driver hi doc delete kar deta.)
+*/
 
 /*
 Step-1 form ka payload -> account fields. Validator pehle hi check kar chuka
@@ -396,8 +406,8 @@ const startEntry = async ({
 
   const otp = freshOtp();
 
-  // Ek mobile ka ek hi live OTP — naya entry purane wale ko replace karta hai.
-  await OTP.deleteMany({ mobile: details.mobile });
+  // Ek mobile ka ek hi live entry-OTP — naya entry purane wale ko replace karta hai.
+  await OTP.deleteMany({ mobile: details.mobile, ...OTP_NOT_STATUS });
 
   await OTP.create({
     mobile: details.mobile,
@@ -436,9 +446,10 @@ const verifyEntry = async ({
   }
   if (!submittedOtp) throw badRequest("OTP is required");
 
-  const otpData = await OTP.findOne({ mobile: verifiedMobile });
+  const otpData = await OTP.findOne({ mobile: verifiedMobile, ...OTP_NOT_STATUS });
 
   if (!otpData) throw badRequest("OTP Not Found");
+  /* OTP ki koi expiry nahi — sirf value match honi chahiye. */
   if (String(otpData.otp) !== submittedOtp) throw badRequest("Invalid OTP");
 
   const accountMobile = cleanText(otpData.mobile);
@@ -474,12 +485,19 @@ const verifyEntry = async ({
     const account = await Model.findOne({ mobile: accountMobile });
 
     if (!account) {
-      await OTP.deleteMany({ mobile: verifiedMobile });
+      await OTP.deleteMany({ mobile: verifiedMobile, ...OTP_NOT_STATUS });
       throw badRequest("Account not found. Please request a new OTP.");
     }
 
     const payload = buildResponse({ role, account, product });
-    return issueToken ? { token: generateToken(account), ...payload } : payload;
+
+    /*
+    Token me entry ka product — uske baad apply sirf usi product ka chalta hai
+    (middleware/entryProduct.middleware.js).
+    */
+    return issueToken
+      ? { token: generateToken(account, { product: isFranchise ? "" : product }), ...payload }
+      : payload;
   }
 
   /*
@@ -494,7 +512,7 @@ const verifyEntry = async ({
   bajaye yahin clear message dekar hata dete hain.
   */
   if (!details || !details.name || !details.email) {
-    await OTP.deleteMany({ mobile: verifiedMobile });
+    await OTP.deleteMany({ mobile: verifiedMobile, ...OTP_NOT_STATUS });
     throw badRequest("Entry details not found. Please fill the form again.");
   }
 
@@ -518,8 +536,13 @@ const verifyEntry = async ({
   /*
   Franchise apne customer ka OTP verify kar raha ho to uske haath customer ka
   token nahi dena — uske paas apni franchise token already hai.
+
+  Customer token me entry ka product bhi jaata hai: uske baad apply sirf usi
+  product ka chalta hai (middleware/entryProduct.middleware.js).
   */
-  return issueToken ? { token: generateToken(account), ...payload } : payload;
+  return issueToken
+    ? { token: generateToken(account, { product: isFranchise ? "" : product }), ...payload }
+    : payload;
 };
 
 module.exports = {

@@ -148,21 +148,24 @@ describe("verifyEntry", () => {
     expect(result.user.email).toBe("existing@example.com");
   });
 
-  it("accepts a matching OTP regardless of its age", async () => {
-    const otpData = {
-      mobile: "9876543210",
-      otp: "123456",
-      role: USER_ROLE.CUSTOMER,
-      createdAt: new Date(Date.now() - 6 * 60 * 1000 - 1),
-      verifiedAt: null,
-      save: jest.fn().mockResolvedValue(undefined),
-      pendingDetails: {
-        name: "Rahul Sharma",
-        email: "rahul@example.com",
-        dob: new Date("1995-05-15"),
-        panNumber: "ABCDE1234F",
-      },
-    };
+  const otpDoc = (overrides = {}) => ({
+    mobile: "9876543210",
+    otp: "123456",
+    role: USER_ROLE.CUSTOMER,
+    createdAt: new Date(),
+    verifiedAt: null,
+    save: jest.fn().mockResolvedValue(undefined),
+    pendingDetails: {
+      name: "Rahul Sharma",
+      email: "rahul@example.com",
+      dob: new Date("1995-05-15"),
+      panNumber: "ABCDE1234F",
+    },
+    ...overrides,
+  });
+
+  it("accepts a matching OTP", async () => {
+    const otpData = otpDoc();
     OTP.findOne.mockResolvedValue(otpData);
 
     const result = await verifyEntry({
@@ -175,5 +178,83 @@ describe("verifyEntry", () => {
     expect(User.mock.instances[0].save).toHaveBeenCalled();
     expect(otpData.save).toHaveBeenCalled();
     expect(OTP.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("looks up only entry OTPs, so a status OTP is never mistaken for one", async () => {
+    const otpData = otpDoc();
+    OTP.findOne.mockResolvedValue(otpData);
+
+    await verifyEntry({ mobile: "9876543210", otp: "123456", expectedRole: USER_ROLE.CUSTOMER });
+
+    expect(OTP.findOne).toHaveBeenCalledWith({
+      mobile: "9876543210",
+      purpose: { $ne: "status" },
+    });
+  });
+
+  /*
+  OTP ki expiry jaan-boojh kar nahi hai — lambi testing me purana OTP bhi chalta
+  rehta hai (jab tak koi naya entry usi mobile ka OTP replace na kare).
+  */
+  it("keeps accepting an OTP however old it is (no expiry)", async () => {
+    const otpData = otpDoc({ createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) });
+    OTP.findOne.mockResolvedValue(otpData);
+
+    const result = await verifyEntry({
+      mobile: "9876543210",
+      otp: "123456",
+      expectedRole: USER_ROLE.CUSTOMER,
+    });
+
+    expect(result.customerId).toBe("CUST000001");
+    expect(otpData.save).toHaveBeenCalled();
+  });
+
+  it("expires nothing even if an old OTP_EXPIRE_MINUTES setting is still in the env", async () => {
+    const original = process.env.OTP_EXPIRE_MINUTES;
+    process.env.OTP_EXPIRE_MINUTES = "1";
+
+    try {
+      OTP.findOne.mockResolvedValue(otpDoc({ createdAt: new Date(Date.now() - 60 * 60 * 1000) }));
+
+      const result = await verifyEntry({
+        mobile: "9876543210",
+        otp: "123456",
+        expectedRole: USER_ROLE.CUSTOMER,
+      });
+
+      expect(result.customerId).toBe("CUST000001");
+    } finally {
+      process.env.OTP_EXPIRE_MINUTES = original;
+    }
+  });
+
+  it("mints the token with the product the customer entered for", async () => {
+    const generateToken = require("../src/utils/generateToken");
+
+    OTP.findOne.mockResolvedValue({
+      mobile: "9876543210",
+      otp: "123456",
+      role: USER_ROLE.CUSTOMER,
+      product: "home",
+      createdAt: new Date(),
+      verifiedAt: null,
+      save: jest.fn().mockResolvedValue(undefined),
+      pendingDetails: {
+        name: "Rahul Sharma",
+        email: "rahul@example.com",
+        dob: new Date("1995-05-15"),
+        panNumber: "ABCDE1234F",
+      },
+    });
+
+    const result = await verifyEntry({
+      mobile: "9876543210",
+      otp: "123456",
+      expectedRole: USER_ROLE.CUSTOMER,
+    });
+
+    expect(result.product).toBe("home");
+    expect(generateToken).toHaveBeenCalledWith(expect.anything(), { product: "home" });
   });
 });

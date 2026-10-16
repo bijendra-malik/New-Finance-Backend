@@ -99,7 +99,6 @@ const findEntryDetailMismatch = (account, body) => {
 const ACCOUNT_NOT_FOUND_MESSAGE = "Account not found. Please verify your mobile number again.";
 
 module.exports = {
-  ENTRY_FIELDS,
   findEntryDetailMismatch,
   ACCOUNT_NOT_FOUND_MESSAGE,
 };
