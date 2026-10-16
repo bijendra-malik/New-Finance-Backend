@@ -232,17 +232,25 @@ const sanitizeLoanResponse = (productKey, record) => {
     if (!allowed.has(field)) delete data[field];
   });
 
-  if (config.normalizeBankOnResponse && data.transactionBankName !== undefined && data.transactionBankName !== null) {
+  /*
+  Koi transaction bank chuna hi nahi gaya (schema ka default) to field response me
+  bhejne ka koi matlab nahi — warna client ko khaali `transactionBankName:
+  { "banks": [] }` dikhta hai.
+  */
+  if (data.transactionBankName !== undefined && data.transactionBankName !== null) {
     const banks = toBankNames(data.transactionBankName);
     const storedDisplayName = data.transactionBankDisplayName || data.transactionBankName.displayName;
 
-    data.transactionBankName = {
-      displayName:
-        storedDisplayName && String(storedDisplayName).trim()
-          ? String(storedDisplayName).trim()
-          : displayNameForBanks(banks),
-      banks,
-    };
+    if (!banks.length) delete data.transactionBankName;
+    else if (config.normalizeBankOnResponse) {
+      data.transactionBankName = {
+        displayName:
+          storedDisplayName && String(storedDisplayName).trim()
+            ? String(storedDisplayName).trim()
+            : displayNameForBanks(banks),
+        banks,
+      };
+    }
   }
 
   delete data.transactionBankDisplayName;
@@ -252,6 +260,59 @@ const sanitizeLoanResponse = (productKey, record) => {
   data.sections = buildSections(data, config, employmentType);
 
   return data;
+};
+
+/**
+ * Khaali value? (`undefined` / `null` / `""` / [] / andar se khaali plain object
+ * jaise `{ banks: [] }`.) Date / ObjectId khaali nahi maane jaate.
+ */
+const isEmptyResponseValue = (value) => {
+  if (value === undefined || value === null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (value instanceof Date) return false;
+
+  if (value && typeof value === "object" && value.constructor === Object) {
+    return Object.values(value).every((item) => isEmptyResponseValue(item));
+  }
+
+  return false;
+};
+
+/**
+ * Sanitized application -> applicant ke liye saaf response.
+ *
+ * Sirf wo field bheji jaati hai jo bhari gayi ho:
+ *
+ *   - `_id` / `user` / `__v` hata diye jaate hain — record ka owner aur internal
+ *     version client ka kaam nahi hai (`applicationNo` public id hai);
+ *   - `franchise` / `franchiseCode` / `franchiseCustomer` null hone par hata diye
+ *     jaate hain: direct customer application me ye hamesha null hote hain,
+ *     isliye customer ke response me franchise ka zikr aata hi nahi. Jab loan
+ *     franchise ne file kiya ho to values hoti hain aur response me rehti hain;
+ *   - khaali values (`""`, [], `{ banks: [] }`) wale fields nahi bhejte.
+ *
+ * `keepSections: true` submit ke response ke liye hai (client turant
+ * section-wise summary dikha sakta hai); screen/list me duplicate snapshot hata
+ * diya jaata hai.
+ */
+const compactLoanResponse = (application, { keepSections = false } = {}) => {
+  if (!application) return application;
+  if (Array.isArray(application)) {
+    return application.map((item) => compactLoanResponse(item, { keepSections }));
+  }
+
+  const compact = { ...application };
+
+  delete compact._id;
+  delete compact.__v;
+  delete compact.user;
+  if (!keepSections) delete compact.sections;
+
+  Object.entries(compact).forEach(([key, value]) => {
+    if (isEmptyResponseValue(value)) delete compact[key];
+  });
+
+  return compact;
 };
 
 /** POST /apply + GET /applications for one product. */
@@ -294,7 +355,10 @@ const createLoanController = (productKey) => {
         const application = await Model.create(
           buildLoanDocument(productKey, req.body, req.user.id, { applicationNo })
         );
-        res.status(201).json({ success: true, data: sanitizeLoanResponse(productKey, application) });
+        res.status(201).json({
+          success: true,
+          data: compactLoanResponse(sanitizeLoanResponse(productKey, application), { keepSections: true }),
+        });
       } catch (error) {
         if (error.name === "ValidationError") {
           return res.status(400).json({
@@ -312,7 +376,9 @@ const createLoanController = (productKey) => {
         const applications = await Model.find({ user: req.user.id }).sort({ createdAt: -1 });
         res.json({
           success: true,
-          data: applications.map((application) => sanitizeLoanResponse(productKey, application)),
+          data: applications.map((application) =>
+            compactLoanResponse(sanitizeLoanResponse(productKey, application))
+          ),
         });
       } catch (error) {
         next(error);
@@ -325,6 +391,6 @@ module.exports = {
   createLoanController,
   buildLoanDocument,
   sanitizeLoanResponse,
+  compactLoanResponse,
   assertNoExistingDirectApplication,
-  sectionFieldNames,
 };

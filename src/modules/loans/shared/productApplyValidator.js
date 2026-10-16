@@ -95,7 +95,6 @@ const productFromParam = (req, res, next) => {
 
 module.exports = {
   buildProductApplyValidator,
-  productValidators,
   productKeyFromParam,
   productFromParam,
 };

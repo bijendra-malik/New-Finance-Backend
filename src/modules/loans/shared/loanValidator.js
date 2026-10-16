@@ -2,6 +2,7 @@ const { body } = require("express-validator");
 
 const { LOAN_PRODUCTS } = require("./loanProducts");
 const handleValidationErrors = require("../../../middleware/validation.middleware");
+const requireEntryProduct = require("../../../middleware/entryProduct.middleware");
 
 const { SALARIED, BUSINESS, PROFESSIONAL } = require("./helpers");
 const { loanBasicsRules } = require("./loanBasics.rules");
@@ -31,6 +32,7 @@ const { creditCardRequirementRules } = require("../credit-card/creditCard.requir
  *
  * Almost every loan application is checked in the same order, in these steps:
  *
+ *   0. middleware/entryProduct.middleware.js -> kya ye product isi token ka hai?
  *   1. loanBasics.rules.js             -> loanAmount + loanTenure
  *   2. <product>.requirements.rules.js -> the extra fields of ONE product
  *   3. existingLoanExposure.rules.js   -> old EMI + old loan amounts
@@ -85,6 +87,12 @@ const buildApplyValidator = (productKey) => {
   const requirements = config.loanRequirements ? requirementRules[config.loanRequirements]() : [];
 
   return [
+    /*
+    0. Product scope — customer ne jis product ki entry (OTP) ki thi, apply bhi
+       wahi ho. Personal ka token home loan apply na kar sake -> 403
+       (middleware/entryProduct.middleware.js).
+    */
+    requireEntryProduct(productKey),
     // 1. Loan Basics
     ...loanBasicsRules(config),
     // 2. Loan Requirements (empty for personal & business loans)

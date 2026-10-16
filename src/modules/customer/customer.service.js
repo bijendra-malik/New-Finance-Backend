@@ -6,6 +6,7 @@ const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const {
   buildLoanDocument,
   sanitizeLoanResponse,
+  compactLoanResponse,
   assertNoExistingDirectApplication,
 } = require("../loans/shared/loan.service");
 
@@ -81,7 +82,7 @@ const getLoanApplyScreen = async (
   { product: rawProduct } = {}
 ) => {
   const product = resolveProduct({ product: rawProduct });
-  const data = compactLoanApplication(await getCustomerProductApplication(customerId, product));
+  const data = compactLoanResponse(await getCustomerProductApplication(customerId, product));
 
   return {
     product,
@@ -91,32 +92,14 @@ const getLoanApplyScreen = async (
   };
 };
 
-const compactLoanApplication = (application) => {
-  if (!application) return null;
-
-  const compact = { ...application };
-  delete compact.sections;
-  delete compact._id;
-  delete compact.user;
-  delete compact.__v;
-
-  Object.entries(compact).forEach(([key, value]) => {
-    if (
-      value === undefined ||
-      value === null ||
-      value === "" ||
-      (Array.isArray(value) && value.length === 0)
-    ) {
-      delete compact[key];
-    }
-  });
-
-  return compact;
-};
-
 /**
  * Create one direct application for the authenticated customer.
  * `franchise` stays null and a fresh `applicationNo` (LOAN000001) is stamped.
+ *
+ * Response applicant ke liye saaf rehta hai (compactLoanResponse): `franchise` /
+ * `franchiseCode` jaise bookkeeping fields — jo direct application me null hote
+ * hain — aur khaali values bheji hi nahi jaati. `sections` yahan rehti hai taaki
+ * submit ke turant baad client section-wise summary dikha sake.
  */
 const createCustomerLoan = async (customerId, body = {}) => {
   const payload = unwrap(body);
@@ -129,7 +112,10 @@ const createCustomerLoan = async (customerId, body = {}) => {
   const document = buildLoanDocument(product, payload, customerId, { applicationNo });
   const application = await MODELS[product].create(document);
 
-  return { application: sanitizeLoanResponse(product, application), product };
+  return {
+    application: compactLoanResponse(sanitizeLoanResponse(product, application), { keepSections: true }),
+    product,
+  };
 };
 
 /** Existing direct application for the selected product, if one exists. */
@@ -175,7 +161,7 @@ const buildStatusView = (productKey, doc) => {
     decisionAt: raw.approvedAt || raw.rejectedAt || null,
     adminNote: raw.adminNote || "",
     timeline,
-    details: sanitizeLoanResponse(productKey, raw),
+    details: compactLoanResponse(sanitizeLoanResponse(productKey, raw)),
   };
 };
 
@@ -206,7 +192,9 @@ const listCustomerLoans = async (customerId, { status } = {}) => {
       return {
         product: productKey,
         count: applications.length,
-        applications: applications.map((application) => sanitizeLoanResponse(productKey, application)),
+        applications: applications.map((application) =>
+          compactLoanResponse(sanitizeLoanResponse(productKey, application))
+        ),
       };
     })
   );
