@@ -1,5 +1,6 @@
 const franchiseService = require("./franchise.service");
 const entryService = require("../auth/entry.service");
+const franchiseStatusService = require("./franchiseStatus.service");
 const { FRANCHISE_STATUS, USER_ROLE } = require("../../constants/roles");
 const { sanitizeFranchiseProfile } = require("./franchiseProfile");
 
@@ -147,6 +148,30 @@ exports.status = async (req, res, next) => {
     }
 
     res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* Public status check: identity OTP request, then OTP verification. */
+exports.requestStatusOtp = async (req, res, next) => {
+  try {
+    const result = await franchiseStatusService.requestStatusOtp(req.body ?? {});
+    res.json({
+      success: true,
+      message: result.message,
+      mobileMasked: result.mobileMasked,
+      nextStep: "status",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.publicStatus = async (req, res, next) => {
+  try {
+    const result = await franchiseStatusService.getStatus(req.body ?? {});
+    res.json({ success: true, ...result });
   } catch (error) {
     next(error);
   }

@@ -17,6 +17,8 @@ const { verifyOtpValidator } = require("../auth/auth.validator");
 const {
   franchiseLoginValidator,
   franchiseEntryValidator,
+  franchiseStatusOtpRequestValidator,
+  franchiseStatusValidator,
 } = require("./franchise.validator");
 
 /*
@@ -29,7 +31,9 @@ Franchise API — mounted at /api/franchise
                      (franchiseStatus = Pending, admin approve karega)
   POST /login        franchiseId + password -> JWT          (public)
   GET  /profile      entry data + status    (franchise token)
-  GET  /status       approval status        (franchise token)
+  POST /status/request-otp identity check -> registered mobile OTP (public)
+  POST /status       OTP verify -> approval status (public)
+  GET  /status       approval status (franchise token)
   GET  /loans        loans via this FRN     (APPROVED franchise only)
 
 Franchise ke apne CUSTOMERS aur unke loans alag router me hain:
@@ -59,6 +63,14 @@ karne par hi milte hain.
 */
 router.post("/entry", otpRequestLimiter, franchiseEntryValidator, franchiseController.entry);
 router.post("/entry/verify", otpVerifyLimiter, verifyOtpValidator, franchiseController.verifyEntry);
+
+router.post(
+  "/status/request-otp",
+  otpRequestLimiter,
+  franchiseStatusOtpRequestValidator,
+  franchiseController.requestStatusOtp
+);
+router.post("/status", otpVerifyLimiter, franchiseStatusValidator, franchiseController.publicStatus);
 
 router.post("/login", adminLoginLimiter, franchiseLoginValidator, franchiseController.login);
 

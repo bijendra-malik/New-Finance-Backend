@@ -51,6 +51,32 @@ const franchiseEntryValidator = [
   handleValidationErrors,
 ];
 
+/* Public franchise status lookup: prove identity, then verify OTP. */
+const franchiseStatusOtpRequestValidator = [
+  body("mobile")
+    .trim()
+    .matches(/^\d{10}$/)
+    .withMessage("Enter a valid 10-digit mobile number"),
+  body("panNumber")
+    .trim()
+    .toUpperCase()
+    .matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/)
+    .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
+  handleValidationErrors,
+];
+
+const franchiseStatusValidator = [
+  body("mobile")
+    .trim()
+    .matches(/^\d{10}$/)
+    .withMessage("Enter a valid 10-digit mobile number"),
+  body("otp")
+    .trim()
+    .matches(/^\d{4,8}$/)
+    .withMessage("Enter a valid OTP"),
+  handleValidationErrors,
+];
+
 /* Body carries `product`, so the matching product's rules run at request time. */
 const franchiseLoanApplyValidator = buildProductApplyValidator();
 
@@ -67,6 +93,8 @@ const franchiseCustomerOtpValidator = [
 module.exports = {
   franchiseLoginValidator,
   franchiseEntryValidator,
+  franchiseStatusOtpRequestValidator,
+  franchiseStatusValidator,
   franchiseLoanApplyValidator,
   franchiseCustomerOtpValidator,
 };
