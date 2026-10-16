@@ -9,7 +9,7 @@ Register/login nahi hai — sirf do step:
 
   1. POST /api/auth/:product      (customer)  ya  POST /api/franchise/entry
      Dono ka payload bilkul same hai: name, email, mobile, DOB, PAN +
-     continent + country (state / city / pincode entry form me nahi hain).
+     continent + country, with optional city and pincode.
   2. POST /api/auth/verify-otp    (customer)  ya  POST /api/franchise/entry/verify
      Mobile + OTP.
 
@@ -54,9 +54,11 @@ const entryFieldRules = [
     .toUpperCase()
     .matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/)
     .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
-  /* Sirf continent + country — state / city / pincode entry form me nahi hain. */
+  /* Location fields are optional so older clients remain compatible. */
   body("continent").optional().trim(),
   body("country").optional().trim(),
+  body("city").optional().trim(),
+  body("pincode").optional().trim(),
 ];
 
 /** Step 1 — customer ka entry form. */

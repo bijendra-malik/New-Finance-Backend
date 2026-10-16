@@ -121,9 +121,8 @@ const buildPendingDetails = (body = {}) => {
   }
 
   /*
-  Sirf continent + country — state / city / pincode entry form me nahi hain
-  (wo franchise ke business data ka hissa hain, entry ka nahi). Client bhej bhi
-  de to yahan store nahi hoti.
+  Entry form se continent, country, city aur pincode capture hote hain. State
+  franchise entry ke is form ka hissa nahi hai.
   */
   return {
     name,
@@ -133,6 +132,8 @@ const buildPendingDetails = (body = {}) => {
     panNumber,
     continent: cleanText(payload.continent),
     country: cleanText(payload.country),
+    city: cleanText(payload.city),
+    pincode: cleanText(payload.pincode),
   };
 };
 
@@ -197,6 +198,8 @@ const upsertCustomer = async (mobile, details) => {
       panNumber: details.panNumber,
       continent: details.continent,
       country: details.country,
+      city: details.city,
+      pincode: details.pincode,
       role: USER_ROLE.CUSTOMER,
       customerId: await nextCustomerId(),
     });
@@ -220,6 +223,8 @@ const upsertCustomer = async (mobile, details) => {
   */
   if (details.continent) existing.continent = details.continent;
   if (details.country) existing.country = details.country;
+  if (details.city) existing.city = details.city;
+  if (details.pincode) existing.pincode = details.pincode;
 
   // Migration se pehle ka account — jiske paas CUST id nahi hai.
   if (!existing.customerId) existing.customerId = await nextCustomerId();
@@ -246,6 +251,8 @@ const upsertFranchise = async (mobile, details) => {
       panNumber: details.panNumber,
       continent: details.continent,
       country: details.country,
+      city: details.city,
+      pincode: details.pincode,
       franchiseStatus: FRANCHISE_STATUS.NONE,
     });
     return { account, isNew: true };
@@ -255,7 +262,7 @@ const upsertFranchise = async (mobile, details) => {
     if (!existing[field] && details[field]) existing[field] = details[field];
   };
 
-  ["name", "email", "dob", "panNumber", "continent", "country"].forEach(fillIfEmpty);
+  ["name", "email", "dob", "panNumber", "continent", "country", "city", "pincode"].forEach(fillIfEmpty);
 
   return { account: existing, isNew: false };
 };
@@ -331,6 +338,8 @@ const buildResponse = ({ role, account, product }) => {
         panNumber: account.panNumber || "",
         continent: account.continent || "",
         country: account.country || "",
+        city: account.city || "",
+        pincode: account.pincode || "",
         franchiseStatus: account.franchiseStatus || FRANCHISE_STATUS.NONE,
         franchiseId: account.franchiseId || null,
         isVerified: account.isVerified,
@@ -356,6 +365,8 @@ const buildResponse = ({ role, account, product }) => {
       panNumber: account.panNumber || "",
       continent: account.continent || "",
       country: account.country || "",
+      city: account.city || "",
+      pincode: account.pincode || "",
       role: account.role,
       isVerified: account.isVerified,
       isActive: account.isActive,

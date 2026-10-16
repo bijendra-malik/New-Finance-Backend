@@ -18,7 +18,7 @@ Entry (franchise banna) aur login do alag cheezein hain:
 Franchise Entry — step 1
 POST /api/franchise/entry
 
-Basic details (name, email, mobile, dob, PAN, continent, country) + plan/package
+Basic details (name, email, mobile, dob, PAN, continent, country, city, pincode) + plan/package
 + business data — sab ek hi form me. Sab kuch PENDING rehta hai aur OTP chala
 jaata hai; koi account nahi banta, isliye adhoora form chhodhne par kuch bachta
 nahi.
