@@ -6,10 +6,10 @@ const { otpRequestLimiter, otpVerifyLimiter } = require("../../middleware/rateLi
 
 /*
 ========================================
-Customer status API — mounted at /api/status
+Customer status API — mounted at /api/customer/status
 
-  POST /request-otp   { customerId, panNumber }         OTP registered mobile par
-  POST /                { customerId, panNumber, otp }   status + process + timeline
+  POST /request-otp   { customerId, panNumber, mobile } OTP registered mobile par
+  POST /              { mobile, otp }                   status + process + timeline
 
 Yahan koi token nahi hai (customer ka login nahi hota): identity CUST id + PAN se
 aur mobile ka control OTP se prove hota hai. Bilkul public hai, isliye dono

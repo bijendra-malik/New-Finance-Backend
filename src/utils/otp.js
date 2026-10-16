@@ -1,7 +1,7 @@
 /*
 ==========================================
-OTP helpers — entry (`POST /api/auth/:product`) aur status door
-(`POST /api/status`) dono inhi ka use karte hai.
+OTP helpers — entry (`POST /api/auth/:product`) aur customer status door
+(`POST /api/customer/status`) dono inhi ka use karte hai.
 
 `freshOtp()` testing ke liye `.env` ka `STATIC_OTP` respect karta hai, aur
 `maskMobile()` response me poora mobile number kabhi wapas nahi bhejne deta.

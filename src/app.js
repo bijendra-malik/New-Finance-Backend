@@ -49,9 +49,6 @@ app.use("/api/franchise", require("./modules/franchise/franchise.routes"));
 
 app.use("/api/customer", require("./modules/customer/customer.routes"));
 
-/* Public status door — CUST id + PAN + OTP, koi token nahi. */
-app.use("/api/status", require("./modules/status/status.routes"));
-
 app.use("/api/personal-loan", require("./modules/loans/personal-loan/personalLoan.routes"));
 app.use("/api/business-loan", require("./modules/loans/business-loan/businessLoan.routes"));
 app.use("/api/home-loan", require("./modules/loans/home-loan/homeLoan.routes"));

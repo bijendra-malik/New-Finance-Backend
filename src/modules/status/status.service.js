@@ -9,8 +9,8 @@ const { buildStatusView } = require("../customer/customer.service");
 ==========================================
 Customer ka status door — bina login, bina token.
 
-  POST /api/status/request-otp   { customerId, panNumber, mobile } -> OTP
-  POST /api/status               { mobile, otp }                   -> process + timeline
+  POST /api/customer/status/request-otp { customerId, panNumber, mobile } -> OTP
+  POST /api/customer/status             { mobile, otp }                   -> process + timeline
 
 OTP request par customer `customerId` + `panNumber` se identify hota hai, aur
 diya gaya mobile registered number se match hona chahiye. OTP verify par mobile

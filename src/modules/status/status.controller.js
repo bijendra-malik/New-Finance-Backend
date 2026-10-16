@@ -4,15 +4,15 @@ const statusService = require("./status.service");
 ==========================================
 Customer status door (public — koi token nahi).
 
-  POST /api/status/request-otp   identity (CUST id + PAN) -> registered mobile par OTP
-  POST /api/status               OTP verify -> application ka status + process
+  POST /api/customer/status/request-otp   identity (CUST id + PAN) -> registered mobile par OTP
+  POST /api/customer/status               OTP verify -> application ka status + process
 
 Dono step ek hi identity check par khade hai, isliye response me kabhi poora mobile
 number wapas nahi jaata (sirf masked).
 ==========================================
 */
 
-/* POST /api/status/request-otp */
+/* POST /api/customer/status/request-otp */
 exports.requestOtp = async (req, res, next) => {
   try {
     const { customerId, panNumber, mobile } = req.body ?? {};
@@ -29,7 +29,7 @@ exports.requestOtp = async (req, res, next) => {
   }
 };
 
-/* POST /api/status */
+/* POST /api/customer/status */
 exports.status = async (req, res, next) => {
   try {
     const { mobile, otp } = req.body ?? {};

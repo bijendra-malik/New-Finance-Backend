@@ -76,7 +76,7 @@ const otpSchema = new mongoose.Schema(
       "entry"  -> loan entry / franchise entry / franchise ka customer register
                   (account + CUST id banta hai)
       "status" -> customer apna loan status dekhne ke liye OTP maangta hai
-                  (`POST /api/status/request-otp`)
+                  (`POST /api/customer/status/request-otp`)
 
     Purpose isliye chahiye: ek mobile ka ek hi OTP doc rehta hai, aur status ka
     OTP entry ka pending OTP uda na de (aur ulta bhi na ho). Purane (is field se

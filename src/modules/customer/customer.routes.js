@@ -11,6 +11,8 @@ const { customerLoanApplyValidator } = require("./customer.validator");
 ========================================
 Customer API — mounted at /api/customer
 
+  POST /status/request-otp      public status OTP request (CUST id + PAN + mobile)
+  POST /status                  public status lookup (mobile + OTP)
   GET  /loan-apply              form ka config (?product=, ?employmentType=)
   POST /loan-apply              unified apply, `product` in the body
   GET  /loans                   all my applications, grouped (?status=)
@@ -22,6 +24,9 @@ The per-product routes (POST /api/personal-loan/apply, …) stay exactly as they
 are — this is an additional, single-door entry point for the dashboard.
 ========================================
 */
+
+/* Public status routes: intentionally mounted before protected customer routes. */
+router.use("/status", require("../status/status.routes"));
 
 /*
 GET  /loan-apply   form ka config — kis employment type me kaunse field +
