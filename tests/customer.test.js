@@ -3,9 +3,16 @@ const { franchiseLoanApplyValidator } = require("../src/modules/franchise/franch
 const customerService = require("../src/modules/customer/customer.service");
 const customerController = require("../src/modules/customer/customer.controller");
 const { describeLoanStatus, MODELS } = require("../src/modules/loans/shared/loanStatus");
-const { assertNoExistingDirectApplication } = require("../src/modules/loans/shared/loan.service");
+const {
+  assertNoExistingDirectApplication,
+  compactLoanResponse,
+  sanitizeLoanResponse,
+} = require("../src/modules/loans/shared/loan.service");
 const normalizeApplyPayload = require("../src/middleware/normalizeApplyPayload.middleware");
 const verifyEntryDetails = require("../src/middleware/entryDetails.middleware");
+const requireEntryProduct = require("../src/middleware/entryProduct.middleware");
+const { findEntryProductMismatch } = require("../src/modules/auth/entryProduct");
+const { USER_ROLE } = require("../src/constants/roles");
 const personalLoanController = require("../src/modules/loans/personal-loan/personalLoan.controller");
 const { findEntryDetailMismatch } = require("../src/modules/auth/entryDetails");
 const User = require("../src/modules/auth/user.model");
@@ -557,5 +564,215 @@ describe("customerService.buildStatusView", () => {
     const view = customerService.buildStatusView("personal", { ...base });
     expect(view.status).toBe("Submitted");
     expect(view.timeline).toHaveLength(1);
+  });
+});
+
+/*
+==========================================
+Entry product scope — personal ka token home loan apply na kar sake.
+
+Rule `modules/auth/entryProduct.js` me hai; dono apply doors isse chalate hain
+(`middleware/entryProduct.middleware.js` route chain ke andar).
+==========================================
+*/
+describe("entry product scope (token ka product vs apply ka product)", () => {
+  const token = (product, role = USER_ROLE.CUSTOMER) => ({ id: "customer-id", role, product });
+
+  /** Route jaisa: token claims + body ke saath ek chain chalao. */
+  const runDoor = (chain, { body, user }) =>
+    new Promise((resolve) => {
+      const req = { body, user };
+      const res = {
+        statusCode: 200,
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        json(payload) {
+          resolve({ next: false, statusCode: this.statusCode, payload, req });
+        },
+      };
+
+      let index = 0;
+      const step = (error) => {
+        if (error) return resolve({ next: false, error });
+        if (index >= chain.length) return resolve({ next: true, req });
+        chain[index++](req, res, step);
+      };
+      step();
+    });
+
+  it("allows the product the token was minted for", () => {
+    expect(findEntryProductMismatch("personal", "personal")).toBeNull();
+    expect(findEntryProductMismatch("personal", " personal ")).toBeNull();
+  });
+
+  it("names both products in the message when the product was switched", () => {
+    const mismatch = findEntryProductMismatch("personal", "home");
+
+    expect(mismatch.entryProduct).toBe("personal");
+    expect(mismatch.requestedProduct).toBe("home");
+    expect(mismatch.message).toContain("Personal Loan");
+    expect(mismatch.message).toContain("Home Loan");
+  });
+
+  it("blocks a token that carries no product at all (pre-change token)", () => {
+    const mismatch = findEntryProductMismatch("", "home");
+
+    expect(mismatch.entryProduct).toBe("");
+    expect(mismatch.message).toContain("not verified for Home Loan");
+  });
+
+  it("leaves an unknown product to the product validator", () => {
+    expect(findEntryProductMismatch("personal", "crypto-loan")).toBeNull();
+  });
+
+  it("rejects a switched product with 403 on a per-product door", async () => {
+    const result = await runDoor([requireEntryProduct("home")], {
+      body: {},
+      user: token("personal"),
+    });
+
+    expect(result.next).toBe(false);
+    expect(result.statusCode).toBe(403);
+    expect(result.payload).toMatchObject({
+      success: false,
+      entryProduct: "personal",
+      requestedProduct: "home",
+    });
+  });
+
+  it("lets the matching product through on a per-product door", async () => {
+    const result = await runDoor([requireEntryProduct("home")], { body: {}, user: token("home") });
+
+    expect(result.next).toBe(true);
+  });
+
+  it("skips the check for franchise tokens (their product comes from the URL)", async () => {
+    const result = await runDoor([requireEntryProduct("home")], {
+      body: {},
+      user: token("", USER_ROLE.FRANCHISE),
+    });
+
+    expect(result.next).toBe(true);
+  });
+
+  it("blocks the unified door before any field validation runs", async () => {
+    const result = await runDoor([normalizeApplyPayload, buildProductApplyValidator()], {
+      body: { product: "home" },
+      user: token("personal"),
+    });
+
+    expect(result.statusCode).toBe(403);
+    expect(result.payload.message).toContain("Home Loan");
+  });
+
+  it("still accepts the unified door when the token's product matches the body", async () => {
+    const result = await runDoor([normalizeApplyPayload, buildProductApplyValidator()], {
+      body: validPersonal,
+      user: token("personal"),
+    });
+
+    expect(result.next).toBe(true);
+  });
+
+  it("runs the rule inside the per-product validator chain too", async () => {
+    const { applyValidator } = require("../src/modules/loans/personal-loan/personalLoan.validator");
+
+    const switched = await runDoor(applyValidator, { body: validPersonal, user: token("home") });
+    expect(switched.statusCode).toBe(403);
+
+    const matching = await runDoor(applyValidator, { body: validPersonal, user: token("personal") });
+    expect(matching.next).toBe(true);
+  });
+});
+
+/*
+==========================================
+Applicant ke response me sirf applicant ka data.
+
+Do darwaze the: khaali `transactionBankName: { banks: [] }` (jo customer ne chuna
+hi nahi tha) response aur sections me aa jaata tha, aur `franchise` /
+`franchiseCode` / `franchiseCustomer` jaise bookkeeping fields bhi direct customer
+ke response me dikh rahe the (`_id` / `user` / `__v` ke saath).
+==========================================
+*/
+describe("applicant-facing response (compactLoanResponse + empty bank)", () => {
+  it("drops an untouched transaction bank from the response and the sections", () => {
+    const response = sanitizeLoanResponse("business", {
+      employmentType: "Self Employed - Professional",
+      profession: "Chartered Accountant",
+      currentYearTurnover: 23456,
+      businessState: "Delhi",
+      transactionBankName: [],
+    });
+
+    expect(response.transactionBankName).toBeUndefined();
+    expect(response.sections.incomeDetails.transactionBankName).toBeUndefined();
+    expect(response.sections.incomeDetails.profession).toBe("Chartered Accountant");
+  });
+
+  it("keeps the transaction bank when one was actually selected", () => {
+    const response = sanitizeLoanResponse("business", {
+      employmentType: "Self Employed - Professional",
+      transactionBankName: { displayName: "HDFC Bank", banks: ["HDFC Bank"] },
+    });
+
+    expect(response.transactionBankName).toEqual({ displayName: "HDFC Bank", banks: ["HDFC Bank"] });
+  });
+
+  it("keeps only what the applicant filled in", () => {
+    const dob = new Date("2002-10-11T00:00:00.000Z");
+
+    const compact = compactLoanResponse({
+      _id: "doc-id",
+      user: "user-id",
+      __v: 0,
+      applicationNo: "LOAN000056",
+      status: "Submitted",
+      franchise: null,
+      franchiseCode: null,
+      franchiseCustomer: null,
+      existingBanks: [],
+      otherBankList: [],
+      panNumber: "",
+      transactionBankName: { banks: [] },
+      dob,
+      sections: { loanRequirements: { loanAmount: 1234567 } },
+    });
+
+    expect(compact).toEqual({ applicationNo: "LOAN000056", status: "Submitted", dob });
+    ["_id", "user", "__v", "franchise", "franchiseCode", "franchiseCustomer", "sections"].forEach(
+      (key) => expect(compact).not.toHaveProperty(key)
+    );
+  });
+
+  it("keeps the franchise bookkeeping when a franchise actually filed the loan", () => {
+    const compact = compactLoanResponse({
+      applicationNo: "LOAN000001",
+      franchise: "franchise-id",
+      franchiseCode: "FRN000001",
+      franchiseCustomer: "customer-id",
+    });
+
+    expect(compact).toMatchObject({
+      franchise: "franchise-id",
+      franchiseCode: "FRN000001",
+      franchiseCustomer: "customer-id",
+    });
+  });
+
+  it("keeps the sections snapshot only when asked (submit response)", () => {
+    const withSections = compactLoanResponse(
+      { applicationNo: "LOAN000001", sections: { loanRequirements: { loanAmount: 1 } } },
+      { keepSections: true }
+    );
+    const withoutSections = compactLoanResponse({
+      applicationNo: "LOAN000001",
+      sections: { loanRequirements: { loanAmount: 1 } },
+    });
+
+    expect(withSections.sections).toEqual({ loanRequirements: { loanAmount: 1 } });
+    expect(withoutSections).not.toHaveProperty("sections");
   });
 });

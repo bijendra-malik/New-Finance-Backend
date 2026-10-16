@@ -326,8 +326,6 @@ const listCustomerApplications = async (req, res, next) => {
 
 module.exports = {
   RESOURCE_ROUTES,
-  modelFor,
-  labelFor,
   getListHandler,
   getByIdHandler,
   updateStatusHandler,
