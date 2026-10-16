@@ -5,6 +5,7 @@ const generateAdminToken = require("../../utils/generateAdminToken");
 const sendEmail = require("../../utils/sendEmail");
 const { otpEmailTemplate } = require("../../utils/emailTemplates");
 const { isValidEmail, isStrongPassword } = require("../../utils/validators");
+const { freshOtp } = require("../../utils/otp");
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -101,7 +102,7 @@ const requestPasswordReset = async (email) => {
     }
   }
 
-  const otp = process.env.STATIC_OTP || Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = freshOtp();
 
   await AdminOTP.deleteMany({ email: cleanEmail });
   await AdminOTP.create({

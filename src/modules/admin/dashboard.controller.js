@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const User = require("../auth/user.model");
 const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanStatus");
