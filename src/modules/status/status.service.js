@@ -9,13 +9,12 @@ const { buildStatusView } = require("../customer/customer.service");
 ==========================================
 Customer ka status door — bina login, bina token.
 
-  POST /api/status/request-otp   { customerId, panNumber }        -> OTP
-  POST /api/status               { customerId, panNumber, otp }   -> process + timeline
+  POST /api/status/request-otp   { customerId, panNumber, mobile } -> OTP
+  POST /api/status               { mobile, otp }                   -> process + timeline
 
-Customer apni identity se prove karta hai ki wahi insaan hai:
-`customerId` (CUST000001) + `panNumber` (entry par verify hua PAN). OTP account ke
-registered mobile par hi jaata hai (client jo bhejta hai us par nahi), isliye
-customer ID + PAN pata hone se bhi koi doosre ka loan nahi dekh sakta.
+OTP request par customer `customerId` + `panNumber` se identify hota hai, aur
+diya gaya mobile registered number se match hona chahiye. OTP verify par mobile
+aur OTP se customer resolve hota hai.
 
 Response wahi view deta hai jo admin apne dashboard par dekhta hai
 (`customer.service.buildStatusView`): status, friendly stage, poora stage list,
@@ -75,16 +74,27 @@ const findStatusCustomer = async ({ customerId, panNumber }) => {
   return customer;
 };
 
+/** Resolve a customer record by its registered mobile before checking the OTP. */
+const findStatusCustomerByMobile = async (mobile) => {
+  const number = cleanText(mobile);
+  if (!/^\d{10}$/.test(number)) {
+    throw badRequest("Enter a valid 10-digit mobile number");
+  }
+
+  const customer = await User.findOne({ mobile: number });
+  if (!customer || !CUSTOMER_ID_REGEX.test(cleanText(customer.customerId))) {
+    throw notFound("Customer not found. Please check the mobile number and try again.");
+  }
+
+  return customer;
+};
+
 /* ------------------------------------------------------- step 1: OTP bhejo -- */
 
 const requestStatusOtp = async ({ customerId, panNumber, mobile }) => {
   const customer = await findStatusCustomer({ customerId, panNumber });
 
-  /*
-  Mobile optional hai — agar client bhejta hai to wo bhi match karna chahiye.
-  OTP hamesha account ke registered number par hi jaata hai.
-  */
-  if (cleanText(mobile) && cleanText(mobile) !== cleanText(customer.mobile)) {
+  if (cleanText(mobile) !== cleanText(customer.mobile)) {
     throw notFound(IDENTITY_MISMATCH_MESSAGE);
   }
 
@@ -122,8 +132,8 @@ const countByStatus = (applications) =>
     { Submitted: 0, Pending: 0, Approved: 0, Rejected: 0 }
   );
 
-const getApplicationStatus = async ({ customerId, panNumber, otp }) => {
-  const customer = await findStatusCustomer({ customerId, panNumber });
+const getApplicationStatus = async ({ mobile, otp }) => {
+  const customer = await findStatusCustomerByMobile(mobile);
 
   const submittedOtp = cleanText(otp);
   if (!submittedOtp) throw badRequest("OTP is required");
@@ -165,4 +175,5 @@ module.exports = {
   requestStatusOtp,
   getApplicationStatus,
   findStatusCustomer,
+  findStatusCustomerByMobile,
 };

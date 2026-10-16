@@ -4,11 +4,10 @@ const handleValidationErrors = require("../../middleware/validation.middleware")
 
 /*
 ==========================================
-Status door ke validators.
+Status door validators.
 
-Yahan sirf ye dekha jaata hai ki field bheji gayi hai ya nahi (khaali request par
-saaf 400). CUST id ka format, PAN ka format aur identity match
-`status.service.js` me check hote hai — wahan message zyada saaf de paate hai.
+OTP request me customer ID, PAN aur mobile chahiye. OTP verify request me sirf
+mobile aur OTP chahiye; customer ko registered mobile se resolve kiya jaata hai.
 ==========================================
 */
 
@@ -17,10 +16,19 @@ const identityRules = [
   body("panNumber").trim().notEmpty().withMessage("PAN number is required"),
 ];
 
-exports.requestOtpValidator = [...identityRules, handleValidationErrors];
+const mobileRule = () =>
+  body("mobile")
+    .trim()
+    .matches(/^\d{10}$/)
+    .withMessage("Enter a valid 10-digit mobile number");
+
+exports.requestOtpValidator = [...identityRules, mobileRule(), handleValidationErrors];
 
 exports.statusValidator = [
-  ...identityRules,
-  body("otp").trim().notEmpty().withMessage("OTP is required"),
+  mobileRule(),
+  body("otp")
+    .trim()
+    .matches(/^\d{4,8}$/)
+    .withMessage("Enter a valid OTP"),
   handleValidationErrors,
 ];

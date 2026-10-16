@@ -32,8 +32,8 @@ exports.requestOtp = async (req, res, next) => {
 /* POST /api/status */
 exports.status = async (req, res, next) => {
   try {
-    const { customerId, panNumber, otp } = req.body ?? {};
-    const result = await statusService.getApplicationStatus({ customerId, panNumber, otp });
+    const { mobile, otp } = req.body ?? {};
+    const result = await statusService.getApplicationStatus({ mobile, otp });
 
     res.json({ success: true, ...result });
   } catch (error) {
