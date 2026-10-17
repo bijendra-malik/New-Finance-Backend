@@ -1,3 +1,5 @@
+const { body } = require("express-validator");
+
 const handleValidationErrors = require("../../middleware/validation.middleware");
 const { buildProductApplyValidator } = require("../loans/shared/productApplyValidator");
 
@@ -19,4 +21,19 @@ time — same rules as the per-product routes.
 */
 const customerLoanApplyValidator = buildProductApplyValidator();
 
-module.exports = { customerLoanApplyValidator, handleValidationErrors };
+/*
+Credit score check — customer apna score submit karta hai. Score 300-900 ke
+beech hona chahiye; eligible/not-eligible ka faisla credit.service.js karta hai.
+*/
+const creditScoreValidator = [
+  body("creditScore")
+    .exists({ checkNull: true })
+    .withMessage("Credit score is required")
+    .bail()
+    .isInt({ min: 300, max: 900 })
+    .withMessage("Enter a valid credit score between 300 and 900")
+    .toInt(),
+  handleValidationErrors,
+];
+
+module.exports = { customerLoanApplyValidator, creditScoreValidator, handleValidationErrors };

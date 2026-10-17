@@ -21,6 +21,7 @@ const {
   displayNameForBanks,
   normalizeTransactionBanks,
 } = require("../../../utils/transactionBanks");
+const { assertLoanEligibility } = require("../../customer/credit.service");
 
 /**
  * Shared loan application service.
@@ -349,6 +350,9 @@ const createLoanController = (productKey) => {
         if (mismatch) {
           return res.status(400).json({ success: false, message: mismatch.message });
         }
+
+        // Credit score checked + 650+ + 24-hour window active hona chahiye.
+        assertLoanEligibility(account);
 
         await assertNoExistingDirectApplication(Model, req.user.id);
         const applicationNo = await nextLoanApplicationNo();

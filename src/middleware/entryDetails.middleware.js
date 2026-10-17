@@ -14,7 +14,9 @@ const {
  */
 module.exports = async (req, res, next) => {
   try {
-    const account = await User.findById(req.user.id);
+    // Baad ke middleware/service isi account ko reuse karte hain (extra DB query nahi).
+    const account = req.account || (await User.findById(req.user.id));
+    req.account = account;
 
     if (!account) {
       return res.status(401).json({ success: false, message: ACCOUNT_NOT_FOUND_MESSAGE });

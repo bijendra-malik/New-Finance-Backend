@@ -94,6 +94,23 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    /*
+    Credit-score eligibility (new customer flow):
+
+      creditScore                    -> last score the customer submitted
+      creditScoreCheckedAt           -> when it was submitted
+      creditEligible                 -> score >= 650
+      creditEligibilityExpiresAt     -> checkedAt + 24 hours (null when not eligible)
+
+    Loan apply sirf tab allowed hai jab score qualify kare aur ye window active
+    ho (modules/customer/credit.service.js). Window beetne par customer phone
+    OTP login karke score dobara check karta hai.
+    */
+    creditScore: { type: Number, default: null },
+    creditScoreCheckedAt: { type: Date, default: null },
+    creditEligible: { type: Boolean, default: false },
+    creditEligibilityExpiresAt: { type: Date, default: null },
   },
   {
     timestamps: true,

@@ -1,4 +1,7 @@
 const customerService = require("./customer.service");
+const User = require("../auth/user.model");
+const { applyCreditScore, creditStatus } = require("./credit.service");
+const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
 
 /*
 ==========================================
@@ -31,7 +34,7 @@ POST /api/customer/loan-apply
 */
 exports.loanApply = async (req, res, next) => {
   try {
-    const { application, product } = await customerService.createCustomerLoan(req.user.id, req.body);
+    const { application, product } = await customerService.createCustomerLoan(req.user.id, req.body, req.account);
 
     res.status(201).json({
       success: true,
@@ -40,6 +43,43 @@ exports.loanApply = async (req, res, next) => {
       loanType: application.loanType,
       data: application,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Credit score submit — eligible (>= 650) hone par 24-hour apply window start.
+POST /api/customer/credit-score   { creditScore }
+*/
+exports.checkCreditScore = async (req, res, next) => {
+  try {
+    const account = await User.findById(req.user.id);
+    if (!account) {
+      return res.status(401).json({ success: false, message: ACCOUNT_NOT_FOUND_MESSAGE });
+    }
+
+    const result = applyCreditScore(account, req.body.creditScore);
+    await account.save();
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Current credit-score status + remaining window (dashboard countdown ke liye).
+GET /api/customer/credit-score
+*/
+exports.creditScoreStatus = async (req, res, next) => {
+  try {
+    const account = await User.findById(req.user.id);
+    if (!account) {
+      return res.status(401).json({ success: false, message: ACCOUNT_NOT_FOUND_MESSAGE });
+    }
+
+    res.json({ success: true, ...creditStatus(account) });
   } catch (error) {
     next(error);
   }

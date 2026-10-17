@@ -8,6 +8,7 @@ const { nextCustomerId } = require("../../utils/sequence");
 const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
+const { creditStatus } = require("../customer/credit.service");
 
 /*
 ==========================================
@@ -51,6 +52,12 @@ const conflict = (message) => {
   return error;
 };
 
+const notFound = (message) => {
+  const error = new Error(message);
+  error.statusCode = 404;
+  return error;
+};
+
 const serverError = (message) => {
   const error = new Error(message);
   error.statusCode = 500;
@@ -73,11 +80,12 @@ const ageInYears = (birthDate) => {
 };
 
 /*
-Entry ka OTP khaali entry ke documents par chalta hai — status door ka OTP
-(`purpose: "status"`) isse alag rehta hai, isliye ek doosre ko replace nahi karte.
-Purane (purpose ke bina bane) documents entry ke hi maane jaate hai.
+Entry ka OTP sirf entry documents par chalta hai. Status (`purpose: "status"`),
+login (`purpose: "login"`) aur franchise-status OTPs alag rehte hain, isliye ek
+doore ko replace ya verify nahi karte. Purane (purpose field ke bina bane)
+documents null branch se entry ke hi maane jaate hain.
 */
-const OTP_NOT_STATUS = { purpose: { $ne: "status" } };
+const ENTRY_OTP_FILTER = { purpose: { $in: ["entry", null] } };
 
 /*
 OTP ki koi expiry nahi hai (jaan-boojh kar).
@@ -348,13 +356,15 @@ const buildResponse = ({ role, account, product }) => {
   }
 
   const config = LOAN_PRODUCTS[product];
+  const credit = creditStatus(account);
 
   return {
     idType: "customer",
     customerId: account.customerId,
     product,
     loanType: config ? config.loanType : "",
-    nextStep: "loan-apply",
+    nextStep: credit.eligible ? "loan-apply" : "credit-score",
+    credit,
     user: {
       _id: account._id,
       customerId: account.customerId,
@@ -418,7 +428,7 @@ const startEntry = async ({
   const otp = freshOtp();
 
   // Ek mobile ka ek hi live entry-OTP — naya entry purane wale ko replace karta hai.
-  await OTP.deleteMany({ mobile: details.mobile, ...OTP_NOT_STATUS });
+  await OTP.deleteMany({ mobile: details.mobile, ...ENTRY_OTP_FILTER });
 
   await OTP.create({
     mobile: details.mobile,
@@ -457,7 +467,7 @@ const verifyEntry = async ({
   }
   if (!submittedOtp) throw badRequest("OTP is required");
 
-  const otpData = await OTP.findOne({ mobile: verifiedMobile, ...OTP_NOT_STATUS });
+  const otpData = await OTP.findOne({ mobile: verifiedMobile, ...ENTRY_OTP_FILTER });
 
   if (!otpData) throw badRequest("OTP Not Found");
   /* OTP ki koi expiry nahi — sirf value match honi chahiye. */
@@ -496,7 +506,7 @@ const verifyEntry = async ({
     const account = await Model.findOne({ mobile: accountMobile });
 
     if (!account) {
-      await OTP.deleteMany({ mobile: verifiedMobile, ...OTP_NOT_STATUS });
+      await OTP.deleteMany({ mobile: verifiedMobile, ...ENTRY_OTP_FILTER });
       throw badRequest("Account not found. Please request a new OTP.");
     }
 
@@ -523,7 +533,7 @@ const verifyEntry = async ({
   bajaye yahin clear message dekar hata dete hain.
   */
   if (!details || !details.name || !details.email) {
-    await OTP.deleteMany({ mobile: verifiedMobile, ...OTP_NOT_STATUS });
+    await OTP.deleteMany({ mobile: verifiedMobile, ...ENTRY_OTP_FILTER });
     throw badRequest("Entry details not found. Please fill the form again.");
   }
 
@@ -556,7 +566,84 @@ const verifyEntry = async ({
     : payload;
 };
 
+/* -------------------------------------------- customer login (phone OTP) -- */
+
+/*
+Existing customer ka login — naya account nahi banta. Sirf uska mobile OTP
+verify hota hai aur login token milta hai. Ye token product-locked nahi hota:
+login ke baad customer credit score check karke koi bhi loan choose kar sakta hai.
+*/
+const startLogin = async ({ mobile } = {}) => {
+  const number = cleanText(mobile);
+  if (!MOBILE_REGEX.test(number)) {
+    throw badRequest("Enter a valid 10-digit mobile number");
+  }
+
+  const account = await User.findOne({ mobile: number });
+  if (!account) {
+    throw notFound("Customer not found. Please complete the loan entry form first.");
+  }
+  if (account.role === USER_ROLE.FRANCHISE) {
+    throw badRequest("Franchise accounts must login with their franchise ID and password.");
+  }
+
+  const otp = freshOtp();
+
+  // Login OTP alag purpose me — entry/status OTP ko touch nahi karta.
+  await OTP.deleteMany({ mobile: number, purpose: "login" });
+  await OTP.create({
+    mobile: number,
+    otp,
+    role: USER_ROLE.CUSTOMER,
+    purpose: "login",
+    pendingDetails: null,
+    verifiedAt: null,
+  });
+
+  const sent = await sendOTP(number, otp);
+  if (!sent) throw serverError("Unable to send OTP. Please try again later.");
+
+  return { mobile: number, mobileMasked: maskMobile(number) };
+};
+
+const verifyLogin = async ({ mobile, otp } = {}) => {
+  const number = cleanText(mobile);
+  const submittedOtp = cleanText(otp);
+
+  if (!MOBILE_REGEX.test(number)) {
+    throw badRequest("Enter a valid 10-digit mobile number");
+  }
+  if (!submittedOtp) throw badRequest("OTP is required");
+
+  const otpData = await OTP.findOne({ mobile: number, purpose: "login" });
+  if (!otpData) throw badRequest("OTP Not Found. Please request a new OTP.");
+  if (String(otpData.otp) !== submittedOtp) throw badRequest("Invalid OTP");
+
+  const account = await User.findOne({ mobile: number });
+  if (!account) {
+    throw notFound("Customer not found. Please complete the loan entry form first.");
+  }
+  if (account.role === USER_ROLE.FRANCHISE) {
+    throw badRequest("Franchise accounts must login with their franchise ID and password.");
+  }
+
+  account.lastLogin = new Date();
+  await account.save();
+
+  otpData.verifiedAt = new Date();
+  await otpData.save();
+
+  // Login OTP single-use: verify hone ke baad hata do.
+  await OTP.deleteMany({ mobile: number, purpose: "login" });
+
+  const payload = buildResponse({ role: USER_ROLE.CUSTOMER, account, product: "" });
+
+  return { token: generateToken(account, { login: true }), ...payload };
+};
+
 module.exports = {
   startEntry,
   verifyEntry,
+  startLogin,
+  verifyLogin,
 };
