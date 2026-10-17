@@ -32,6 +32,34 @@ jest.mock("../src/modules/loans/business-loan/businessLoan.model", () => ({
   findById: jest.fn(),
 }));
 
+/*
+The apply handlers read the verified account (entry details check) and mint an
+application number before saving. Both are DB-backed, so they are mocked here —
+otherwise Mongoose buffers the query and every controller test times out.
+*/
+jest.mock("../src/modules/auth/user.model", () => ({ findById: jest.fn() }));
+jest.mock("../src/utils/sequence", () => ({ nextLoanApplicationNo: jest.fn() }));
+
+const User = require("../src/modules/auth/user.model");
+const { nextLoanApplicationNo } = require("../src/utils/sequence");
+
+/* Every direct-apply test uses the same verified identity (see the payloads). */
+const verifiedAccount = {
+  name: "Rohit Sharma",
+  mobile: "9876543210",
+  email: "rohit@example.com",
+  dob: "1992-06-15",
+  panNumber: "ABCDE1234F",
+};
+
+beforeEach(() => {
+  User.findById.mockResolvedValue(verifiedAccount);
+  nextLoanApplicationNo.mockResolvedValue("LOAN000001");
+  jest.spyOn(HomeLoan, "exists").mockResolvedValue(null);
+  jest.spyOn(PersonalLoan, "exists").mockResolvedValue(null);
+  jest.spyOn(LoanAgainstProperty, "exists").mockResolvedValue(null);
+});
+
 /** Runs an express-validator chain (+ the trailing handleValidationErrors) against a fake req. */
 const runChain = (chain, body) => {
   const req = { body };

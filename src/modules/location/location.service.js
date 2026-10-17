@@ -119,7 +119,6 @@ const RESOURCES = {
   },
 };
 
-const RESOURCE_KEYS = Object.keys(RESOURCES);
 
 const getResource = (key) => {
   const def = RESOURCES[key];
@@ -1085,7 +1084,6 @@ const remove = async (key, id, { hard = false, force = false } = {}) => {
 
 module.exports = {
   RESOURCES,
-  RESOURCE_KEYS,
   slugFor,
   list,
   getById,

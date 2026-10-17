@@ -4,7 +4,7 @@ Admin loan application endpoints.
 
 ONE registry drives every product so the application resources never drift apart:
 
-  RESOURCE_ROUTES  -> route -> { productKey, model, label, exportName }
+  RESOURCE_ROUTES  -> route -> { productKey, label }
   getListHandler   -> GET    /api/admin/{resource}
   getByIdHandler   -> GET    /api/admin/{resource}/:id
   updateStatusHandler -> PATCH /api/admin/{resource}/:id/status
@@ -33,92 +33,74 @@ const RESOURCE_ROUTES = {
   "personal-loans": {
     productKey: "personal",
     label: "Personal loan",
-    exportName: "PersonalLoans",
   },
   "business-loans": {
     productKey: "business",
     label: "Business loan",
-    exportName: "BusinessLoans",
   },
   "home-loans": {
     productKey: "home",
     label: "Home loan",
-    exportName: "HomeLoans",
   },
   "loan-against-properties": {
     productKey: "lap",
     label: "Loan against property",
-    exportName: "LoanAgainstProperties",
   },
   "balance-transfers": {
     productKey: "balanceTransfer",
     label: "Balance transfer",
-    exportName: "BalanceTransfers",
   },
   "project-loans": {
     productKey: "projectLoan",
     label: "Project loan",
-    exportName: "ProjectLoans",
   },
   "vehicle-loans": {
     productKey: "vehicleLoan",
     label: "Vehicle loan",
-    exportName: "VehicleLoans",
   },
   "education-loans": {
     productKey: "educationLoan",
     label: "Education loan",
-    exportName: "EducationLoans",
   },
   "credit-cards": {
     productKey: "creditCard",
     label: "Credit card",
-    exportName: "CreditCards",
   },
   "working-capitals": {
     productKey: "workingCapital",
     label: "Working capital",
-    exportName: "WorkingCapitals",
   },
   "commercial-purchases": {
     productKey: "commercialPurchase",
     label: "Commercial purchase",
-    exportName: "CommercialPurchases",
   },
   "lease-rental-discountings": {
     productKey: "leaseRentalDiscounting",
     label: "Lease rental discounting",
-    exportName: "LeaseRentalDiscountings",
   },
   "od-cc-limits": {
     productKey: "odCcLimit",
     label: "OD / CC limit",
-    exportName: "OdCcLimits",
   },
   "loan-against-shares": {
     productKey: "loanAgainstShare",
     label: "Loan against share",
-    exportName: "LoanAgainstShares",
   },
   "npa-loans": {
     productKey: "npaLoan",
     label: "NPA loan",
-    exportName: "NpaLoans",
   },
   "gold-loans": {
     productKey: "goldLoan",
     label: "Gold loan",
-    exportName: "GoldLoans",
   },
   "fdi-loans": {
     productKey: "fdiLoan",
     label: "FDI loan",
-    exportName: "FdiLoans",
   },
   "film-fundings": {
     productKey: "filmFunding",
     label: "Film funding",
-    exportName: "FilmFundings",
   },
 };
 

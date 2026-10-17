@@ -51,7 +51,6 @@ const sanitizeFranchiseProfile = (franchise) => {
 };
 
 module.exports = {
-  FRANCHISE_PROFILE_FIELDS,
   FRANCHISE_ONLY_PROFILE_FIELDS,
   sanitizeFranchiseProfile,
 };

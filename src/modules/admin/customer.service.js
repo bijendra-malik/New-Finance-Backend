@@ -74,14 +74,6 @@ orphan live applications. Applications already deleted are reported as 404.
 
 const TERMINAL_STATUSES = new Set(["Approved", "Rejected"]);
 
-const countApplicationsOf = async (customerId) => {
-  let total = 0;
-  for (const Model of Object.values(MODELS)) {
-    total += await Model.countDocuments({ user: customerId });
-  }
-  return total;
-};
-
 const deleteCustomer = async (id) => {
   const customer = await getCustomerById(id);
 
@@ -128,12 +120,9 @@ const deleteCustomer = async (id) => {
   return { customer, removedApplications: total };
 };
 
-const countAllApplications = async (customerId) => countApplicationsOf(customerId);
-
 module.exports = {
   listCustomers,
   getCustomerById,
   deleteCustomer,
-  countAllApplications,
   TERMINAL_STATUSES,
 };

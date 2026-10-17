@@ -11,14 +11,8 @@ which transitions an admin is allowed to perform.
 
 const { MODELS } = require("./loanModels");
 
-/** Statuses still waiting on an admin decision. */
-const OPEN_STATUSES = ["Submitted", "Pending"];
-
 /** Statuses that close an application. */
 const TERMINAL_STATUSES = ["Approved", "Rejected"];
-
-/** Every status a loan document may carry. */
-const ALL_STATUSES = [...OPEN_STATUSES, ...TERMINAL_STATUSES];
 
 /** Admin-decisionable statuses accepted by PATCH /{resource}/:id/status. */
 const SETTABLE_STATUSES = ["Pending", "Approved", "Rejected"];
@@ -64,9 +58,7 @@ const STATUS_STEP_LABELS = [
 ];
 
 module.exports = {
-  OPEN_STATUSES,
   TERMINAL_STATUSES,
-  ALL_STATUSES,
   SETTABLE_STATUSES,
   ALLOWED_TRANSITIONS,
   canTransition,
