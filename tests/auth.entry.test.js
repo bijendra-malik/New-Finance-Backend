@@ -10,6 +10,7 @@ jest.mock("../src/modules/auth/user.model", () => {
 jest.mock("../src/modules/franchise/franchise.model", () => ({ findOne: jest.fn() }));
 jest.mock("../src/modules/auth/otp.model", () => ({
   findOne: jest.fn(),
+  create: jest.fn().mockResolvedValue({}),
   deleteMany: jest.fn().mockResolvedValue({ deletedCount: 1 }),
 }));
 jest.mock("../src/utils/sendOTP", () => jest.fn());
@@ -19,8 +20,10 @@ jest.mock("../src/utils/sequence", () => ({ nextCustomerId: jest.fn().mockResolv
 
 const User = require("../src/modules/auth/user.model");
 const OTP = require("../src/modules/auth/otp.model");
+const sendOTP = require("../src/utils/sendOTP");
+const generateToken = require("../src/utils/generateToken");
 const { USER_ROLE } = require("../src/constants/roles");
-const { verifyEntry } = require("../src/modules/auth/entry.service");
+const { verifyEntry, startLogin, verifyLogin } = require("../src/modules/auth/entry.service");
 
 describe("verifyEntry", () => {
   beforeEach(() => {
@@ -61,7 +64,8 @@ describe("verifyEntry", () => {
       })
     );
     expect(result.token).toBe("test-token");
-    expect(result.nextStep).toBe("loan-apply");
+    expect(result.nextStep).toBe("credit-score");
+    expect(result.credit.eligible).toBe(false);
     expect(OTP.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -180,7 +184,7 @@ describe("verifyEntry", () => {
     expect(OTP.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("looks up only entry OTPs, so a status OTP is never mistaken for one", async () => {
+  it("looks up only entry OTPs, so status/login OTPs are never mistaken for one", async () => {
     const otpData = otpDoc();
     OTP.findOne.mockResolvedValue(otpData);
 
@@ -188,7 +192,7 @@ describe("verifyEntry", () => {
 
     expect(OTP.findOne).toHaveBeenCalledWith({
       mobile: "9876543210",
-      purpose: { $ne: "status" },
+      purpose: { $in: ["entry", null] },
     });
   });
 
@@ -256,5 +260,63 @@ describe("verifyEntry", () => {
 
     expect(result.product).toBe("home");
     expect(generateToken).toHaveBeenCalledWith(expect.anything(), { product: "home" });
+  });
+});
+
+describe("customer login (phone OTP)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sendOTP.mockResolvedValue(true);
+    OTP.create.mockResolvedValue({});
+    OTP.deleteMany.mockResolvedValue({ deletedCount: 1 });
+  });
+
+  it("rejects a mobile that has no customer account", async () => {
+    User.findOne.mockResolvedValue(null);
+
+    await expect(startLogin({ mobile: "9876543210" })).rejects.toMatchObject({ statusCode: 404 });
+    expect(sendOTP).not.toHaveBeenCalled();
+  });
+
+  it("sends a login-purpose OTP without touching entry OTPs", async () => {
+    User.findOne.mockResolvedValue({ _id: "u1", mobile: "9876543210", role: USER_ROLE.CUSTOMER });
+
+    const result = await startLogin({ mobile: "9876543210" });
+
+    expect(result.mobileMasked).toBe("98******10");
+    expect(OTP.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mobile: "9876543210", purpose: "login" })
+    );
+    expect(OTP.deleteMany).toHaveBeenCalledWith({ mobile: "9876543210", purpose: "login" });
+    expect(sendOTP).toHaveBeenCalled();
+  });
+
+  it("verifies the login OTP and returns a product-free login token", async () => {
+    OTP.findOne.mockResolvedValue({
+      mobile: "9876543210",
+      otp: "123456",
+      verifiedAt: null,
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+    User.findOne.mockResolvedValue({
+      _id: "u1",
+      mobile: "9876543210",
+      role: USER_ROLE.CUSTOMER,
+      customerId: "CUST000001",
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await verifyLogin({ mobile: "9876543210", otp: "123456" });
+
+    expect(result.token).toBe("test-token");
+    expect(generateToken).toHaveBeenCalledWith(expect.anything(), { login: true });
+    expect(result.nextStep).toBe("credit-score");
+    expect(OTP.deleteMany).toHaveBeenCalledWith({ mobile: "9876543210", purpose: "login" });
+  });
+
+  it("rejects a wrong OTP", async () => {
+    OTP.findOne.mockResolvedValue({ mobile: "9876543210", otp: "123456", save: jest.fn() });
+
+    await expect(verifyLogin({ mobile: "9876543210", otp: "999999" })).rejects.toThrow("Invalid OTP");
   });
 });

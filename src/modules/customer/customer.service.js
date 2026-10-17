@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 
 const { nextLoanApplicationNo } = require("../../utils/sequence");
+const User = require("../auth/user.model");
+const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
+const { assertLoanEligibility } = require("./credit.service");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const {
@@ -101,9 +104,18 @@ const getLoanApplyScreen = async (
  * hain — aur khaali values bheji hi nahi jaati. `sections` yahan rehti hai taaki
  * submit ke turant baad client section-wise summary dikha sake.
  */
-const createCustomerLoan = async (customerId, body = {}) => {
+const createCustomerLoan = async (customerId, body = {}, account = null) => {
   const payload = unwrap(body);
   const product = resolveProduct(payload);
+
+  /*
+  Credit-score gate: score checked, >= 650, aur 24-hour window active.
+  `req.account` unified route ke entry-details middleware se aata hai; direct
+  service call par account yahin load ho jaata hai.
+  */
+  const customer = account || (await User.findById(customerId));
+  if (!customer) throw notFound(ACCOUNT_NOT_FOUND_MESSAGE);
+  assertLoanEligibility(customer);
 
   await assertNoExistingDirectApplication(MODELS[product], customerId);
 

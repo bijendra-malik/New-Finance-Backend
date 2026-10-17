@@ -93,6 +93,51 @@ exports.verifyOTP = async (req, res, next) => {
   }
 };
 
+/*
+Customer login — Step 1.
+POST /api/auth/login/request-otp   { mobile }
+
+Sirf pehle se bane customer ka OTP. Naya account yahan nahi banta.
+*/
+exports.loginRequestOtp = async (req, res, next) => {
+  try {
+    const { mobileMasked } = await entryService.startLogin({ mobile: req.body.mobile });
+
+    res.json({
+      success: true,
+      message: `OTP sent to ${mobileMasked}`,
+      mobileMasked,
+      nextStep: "verify-otp",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Customer login — Step 2.
+POST /api/auth/login/verify-otp   { mobile, otp }
+
+Login token product-locked nahi hota: customer credit score check karke koi bhi
+loan product choose kar sakta hai.
+*/
+exports.loginVerify = async (req, res, next) => {
+  try {
+    const result = await entryService.verifyLogin({
+      mobile: req.body.mobile,
+      otp: req.body.otp,
+    });
+
+    res.json({
+      success: true,
+      message: "Login successful",
+      ...result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /* ---------------------------------------------------------- profiles -- */
 
 // GET /api/auth/profile  (token ke role se sahi collection)

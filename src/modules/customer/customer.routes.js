@@ -5,7 +5,7 @@ const auth = require("../../middleware/auth.middleware");
 const { requireCustomer } = require("../../middleware/franchise.middleware");
 const normalizeApplyPayload = require("../../middleware/normalizeApplyPayload.middleware");
 const verifyEntryDetails = require("../../middleware/entryDetails.middleware");
-const { customerLoanApplyValidator } = require("./customer.validator");
+const { customerLoanApplyValidator, creditScoreValidator } = require("./customer.validator");
 
 /*
 ========================================
@@ -47,6 +47,13 @@ router.post(
   verifyEntryDetails,
   customerController.loanApply
 );
+
+/*
+Credit score door — OTP verify ke baad, loan form se pehle.
+POST par eligible/not-eligible + 24-hour window milti hai.
+*/
+router.get("/credit-score", auth, requireCustomer, customerController.creditScoreStatus);
+router.post("/credit-score", auth, requireCustomer, creditScoreValidator, customerController.checkCreditScore);
 
 router.get("/loans", auth, requireCustomer, customerController.loans);
 

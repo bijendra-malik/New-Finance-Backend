@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 
-const generateToken = (user, { product = "" } = {}) => {
+const generateToken = (user, { product = "", login = false } = {}) => {
 
     return jwt.sign(
         {
@@ -14,6 +14,10 @@ const generateToken = (user, { product = "" } = {}) => {
             // sirf isi product ka chalta hai —
             // middleware/entryProduct.middleware.js.
             ...(product ? { product } : {}),
+            // Login token (`POST /api/auth/login/verify-otp`) kisi ek product
+            // se bandha nahi hota — customer credit score check ke baad koi
+            // bhi loan choose kar sakta hai.
+            ...(login ? { login: true } : {}),
         },
         process.env.JWT_SECRET,
         {

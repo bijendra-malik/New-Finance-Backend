@@ -20,6 +20,13 @@ const CUSTOMER_ROLES = [USER_ROLE.CUSTOMER, USER_ROLE.LEGACY_CUSTOMER];
 const requireEntryProduct = (productKey) => (req, res, next) => {
   if (!CUSTOMER_ROLES.includes(req.user?.role)) return next();
 
+  /*
+  Login token kisi product ki entry se nahi banta — customer phone OTP login
+  ke baad credit score check karke koi bhi loan choose kar sakta hai. Entry
+  token par product lock hamesha lagta rahega.
+  */
+  if (req.user?.login) return next();
+
   const requestedProduct =
     typeof productKey === "function" ? productKey(req) : productKey;
 

@@ -64,11 +64,15 @@ const entryFieldRules = [
 /** Step 1 — customer ka entry form. */
 const entryValidator = [...entryFieldRules, handleValidationErrors];
 
+/** Customer login — sirf registered mobile number chahiye. */
+const loginRequestValidator = [mobile(), handleValidationErrors];
+
 /** Step 2 — OTP verify. */
 const verifyOtpValidator = [mobile(), otp(), handleValidationErrors];
 
 module.exports = {
   entryFieldRules,
   entryValidator,
+  loginRequestValidator,
   verifyOtpValidator,
 };

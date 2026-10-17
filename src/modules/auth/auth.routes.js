@@ -8,7 +8,7 @@ const {
 } = require("../../middleware/franchise.middleware");
 const { otpRequestLimiter, otpVerifyLimiter } = require("../../middleware/rateLimit.middleware");
 const { productFromParam } = require("../loans/shared/productApplyValidator");
-const { entryValidator, verifyOtpValidator } = require("./auth.validator");
+const { entryValidator, loginRequestValidator, verifyOtpValidator } = require("./auth.validator");
 
 /*
 ========================================
@@ -30,6 +30,14 @@ Franchise ka alag darwaza hai: POST /api/franchise/entry.
 
 // Step 2 — OTP verify (yahan account + CUST id + token banta hai)
 router.post("/verify-otp", otpVerifyLimiter, verifyOtpValidator, authController.verifyOTP);
+
+/*
+Existing customer login (phone + OTP). Naya account nahi banta; login token
+product-locked nahi hota, isliye credit score check ke baad koi bhi loan apply
+ho sakta hai.
+*/
+router.post("/login/request-otp", otpRequestLimiter, loginRequestValidator, authController.loginRequestOtp);
+router.post("/login/verify-otp", otpVerifyLimiter, verifyOtpValidator, authController.loginVerify);
 
 /* Profiles (token ke role se alag-alag). */
 router.get("/customer/profile", auth, requireCustomer, authController.customerProfile);
