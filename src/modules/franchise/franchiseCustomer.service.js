@@ -2,8 +2,10 @@ const mongoose = require("mongoose");
 
 const FranchiseCustomer = require("./franchiseCustomer.model");
 const Franchise = require("./franchise.model");
+const User = require("../auth/user.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { buildStatusView } = require("../customer/customer.service");
+const { applyCreditScore } = require("../customer/credit.service");
 const entryService = require("../auth/entry.service");
 const { USER_ROLE } = require("../../constants/roles");
 
@@ -34,6 +36,12 @@ const badRequest = (message) => {
 const conflict = (message) => {
   const error = new Error(message);
   error.statusCode = 409;
+  return error;
+};
+
+const forbidden = (message) => {
+  const error = new Error(message);
+  error.statusCode = 403;
   return error;
 };
 
@@ -193,6 +201,23 @@ const resendCustomerOtp = async (franchise, body = {}) => {
   });
 
   return { mobileMasked: result.mobileMasked, nextStep: "verify-otp" };
+};
+
+/** Franchise submits a credit score for its own OTP-verified customer. */
+const submitCustomerCreditScore = async (franchise, id, rawScore) => {
+  const franchiseCustomer = await getCustomerDoc(franchise, id);
+
+  if (!franchiseCustomer.isVerified) {
+    throw forbidden("Verify this customer's mobile before submitting a credit score.");
+  }
+
+  const account = await User.findOne({ mobile: franchiseCustomer.mobile, role: USER_ROLE.CUSTOMER });
+  if (!account) throw notFound("Customer account not found. Verify the customer's mobile first.");
+
+  const result = applyCreditScore(account, rawScore);
+  await account.save();
+
+  return result;
 };
 
 /* --------------------------------------------------------------- read -- */
@@ -381,6 +406,7 @@ module.exports = {
   registerCustomer,
   verifyCustomerOtp,
   resendCustomerOtp,
+  submitCustomerCreditScore,
   listCustomers,
   getCustomer,
   getCustomerDoc,

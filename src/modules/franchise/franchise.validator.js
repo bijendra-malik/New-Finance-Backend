@@ -94,6 +94,17 @@ const franchiseCustomerOtpValidator = [
   handleValidationErrors,
 ];
 
+const franchiseCustomerCreditScoreValidator = [
+  body("creditScore")
+    .exists({ checkNull: true })
+    .withMessage("Credit score is required")
+    .bail()
+    .isInt({ min: 300, max: 900 })
+    .withMessage("Enter a valid credit score between 300 and 900")
+    .toInt(),
+  handleValidationErrors,
+];
+
 module.exports = {
   franchiseLoginValidator,
   franchiseEntryValidator,
@@ -101,4 +112,5 @@ module.exports = {
   franchiseStatusValidator,
   franchiseLoanApplyValidator,
   franchiseCustomerOtpValidator,
+  franchiseCustomerCreditScoreValidator,
 };

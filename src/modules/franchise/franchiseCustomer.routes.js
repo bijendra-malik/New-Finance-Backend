@@ -15,6 +15,7 @@ const {
 const {
   franchiseLoanApplyValidator,
   franchiseCustomerOtpValidator,
+  franchiseCustomerCreditScoreValidator,
 } = require("./franchise.validator");
 
 /*
@@ -25,6 +26,7 @@ Franchise customer API — mounted at /api/franchise/customer
   POST   /register                     naya customer register karo (OTP customer
                                        ke phone par jaata hai)
   POST   /verify-otp                   customer mobile + OTP -> CUST id banti hai
+  POST   /:id/credit-score             verified customer ka score submit/check
   POST   /:product/applyloan           usi customer ke liye loan apply karo
                                        e.g. /customer/personal/applyloan
                                             /customer/gold-loan/applyloan
@@ -60,6 +62,14 @@ router.post(
 );
 
 router.post("/resend-otp", auth, requireApprovedFranchise, otpRequestLimiter, controller.resendCustomerOtp);
+
+router.post(
+  "/:id/credit-score",
+  auth,
+  requireApprovedFranchise,
+  franchiseCustomerCreditScoreValidator,
+  controller.submitCustomerCreditScore
+);
 
 router.post(
   "/:product/applyloan",

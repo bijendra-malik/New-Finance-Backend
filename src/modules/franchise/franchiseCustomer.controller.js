@@ -68,6 +68,20 @@ exports.resendCustomerOtp = async (req, res, next) => {
   }
 };
 
+exports.submitCustomerCreditScore = async (req, res, next) => {
+  try {
+    const result = await service.submitCustomerCreditScore(
+      req.franchise,
+      req.params.id,
+      req.body.creditScore
+    );
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /* Saare customers — search + pagination */
 exports.list = async (req, res, next) => {
   try {
