@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const User = require("../auth/user.model");
 const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
-const { assertLoanEligibility } = require("./credit.service");
+const { assertLoanEligibility, creditSnapshot } = require("./credit.service");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const {
@@ -121,7 +121,10 @@ const createCustomerLoan = async (customerId, body = {}, account = null) => {
 
   const applicationNo = await nextLoanApplicationNo();
 
-  const document = buildLoanDocument(product, payload, customerId, { applicationNo });
+  const document = buildLoanDocument(product, payload, customerId, {
+    applicationNo,
+    credit: creditSnapshot(customer),
+  });
   const application = await MODELS[product].create(document);
 
   return {

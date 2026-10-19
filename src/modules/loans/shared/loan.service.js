@@ -21,7 +21,7 @@ const {
   displayNameForBanks,
   normalizeTransactionBanks,
 } = require("../../../utils/transactionBanks");
-const { assertLoanEligibility } = require("../../customer/credit.service");
+const { assertLoanEligibility, creditSnapshot } = require("../../customer/credit.service");
 
 /**
  * Shared loan application service.
@@ -183,6 +183,19 @@ const buildLoanDocument = (productKey, body, userId, options = {}) => {
   if (options.applicationNo) data.applicationNo = options.applicationNo;
   // Franchise ka apna customer record — direct customer application me nahi hota.
   if (options.franchiseCustomer) data.franchiseCustomer = options.franchiseCustomer;
+
+  /*
+  Credit score snapshot is SERVER-owned: the score the customer checked before
+  this application is copied from the account at submit time. The account keeps
+  the latest score, so this copy is what keeps an older application's score
+  intact after the customer re-checks for their next loan.
+  */
+  if (options.credit) {
+    data.creditScore = options.credit.creditScore;
+    data.creditScoreCheckedAt = options.credit.creditScoreCheckedAt;
+    data.creditEligible = options.credit.creditEligible;
+    data.creditEligibilityExpiresAt = options.credit.creditEligibilityExpiresAt;
+  }
 
   dataFieldNames(config, employmentType).forEach((field) => {
     if (source[field] !== undefined) data[field] = source[field];
@@ -357,7 +370,10 @@ const createLoanController = (productKey) => {
         await assertNoExistingDirectApplication(Model, req.user.id);
         const applicationNo = await nextLoanApplicationNo();
         const application = await Model.create(
-          buildLoanDocument(productKey, req.body, req.user.id, { applicationNo })
+          buildLoanDocument(productKey, req.body, req.user.id, {
+            applicationNo,
+            credit: creditSnapshot(account),
+          })
         );
         res.status(201).json({
           success: true,

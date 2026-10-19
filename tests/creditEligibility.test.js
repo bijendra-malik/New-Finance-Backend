@@ -2,6 +2,7 @@ const {
   MIN_CREDIT_SCORE,
   applyCreditScore,
   creditStatus,
+  creditSnapshot,
   assertLoanEligibility,
 } = require("../src/modules/customer/credit.service");
 
@@ -48,6 +49,28 @@ describe("credit score eligibility", () => {
 
     const result = applyCreditScore(user, 700);
     expect(result.remainingSeconds).toBeGreaterThan(86000);
+  });
+
+  it("snapshots the score checked for one application, so a later re-check cannot rewrite it", () => {
+    const user = account();
+    applyCreditScore(user, 650);
+    const homeLoanSnapshot = creditSnapshot(user);
+
+    /* Customer re-checks before applying for the next product. */
+    applyCreditScore(user, 700);
+    const businessLoanSnapshot = creditSnapshot(user);
+
+    expect(homeLoanSnapshot.creditScore).toBe(650);
+    expect(homeLoanSnapshot.creditEligible).toBe(true);
+    expect(homeLoanSnapshot.creditScoreCheckedAt).toBeInstanceOf(Date);
+    expect(homeLoanSnapshot.creditEligibilityExpiresAt).toBeTruthy();
+
+    expect(businessLoanSnapshot.creditScore).toBe(700);
+    expect(user.creditScore).toBe(700);
+  });
+
+  it("returns no snapshot until the customer checks a score", () => {
+    expect(creditSnapshot(account())).toBeNull();
   });
 
   it("rejects scores outside 300-900", () => {

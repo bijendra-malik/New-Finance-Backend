@@ -6,6 +6,7 @@ const {
   SERVER_MANAGED_FIELD_NAMES,
   ADMIN_REVIEW_FIELDS,
   ADMIN_REVIEW_FIELD_NAMES,
+  CREDIT_SNAPSHOT_FIELDS,
   FRANCHISE_FIELDS,
 } = require("./loanBasics.schema");
 const {
@@ -191,6 +192,9 @@ const buildLoanSchema = (productKey) => {
       // Channel linkage — null for a direct customer application, set when an
       // approved franchise submits on the customer's behalf.
       ...FRANCHISE_FIELDS,
+
+      // Per-application credit-score snapshot (fixed at submit time).
+      ...CREDIT_SNAPSHOT_FIELDS,
 
       status: {
         type: String,

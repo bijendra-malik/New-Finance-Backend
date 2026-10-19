@@ -651,6 +651,39 @@ describe("personalLoanController.apply (dashboard contract)", () => {
     expect(saved.user).toBe("64f000000000000000000001");
     expect(saved.loanType).toBe("Personal Loan");
     expect(saved.status).toBeUndefined();
+
+    // Per-application credit snapshot, copied from the account at submit time.
+    expect(saved.creditScore).toBe(720);
+    expect(saved.creditEligible).toBe(true);
+    expect(saved.creditScoreCheckedAt).toEqual(verifiedAccount.creditScoreCheckedAt);
+    expect(saved.creditEligibilityExpiresAt).toEqual(verifiedAccount.creditEligibilityExpiresAt);
+  });
+
+  it("ignores a client-supplied credit score and keeps the account snapshot", async () => {
+    const createSpy = jest.spyOn(PersonalLoan, "create").mockResolvedValue({ _id: "p2" });
+
+    const payload = normalizeApplyPayload({
+      fullName: "Rohit Sharma",
+      mobile: "9876543210",
+      employmentType: "Salaried",
+      companyName: "ABC Corp",
+      companyType: "Private Limited",
+      monthlyNetSalary: 75000,
+      salaryReceivedAs: "Bank Transfer",
+      salaryBankName: "HDFC Bank",
+      loanAmount: 300000,
+      loanTenure: 3,
+      creditScore: 900,
+      creditEligible: true,
+      creditScoreCheckedAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    await personalLoanController.apply({ body: payload, user: { id: "64f000000000000000000001" } }, res, jest.fn());
+
+    const saved = createSpy.mock.calls[0][0];
+    expect(saved.creditScore).toBe(720);
+    expect(saved.creditEligible).toBe(true);
+    expect(saved.creditScoreCheckedAt).toEqual(verifiedAccount.creditScoreCheckedAt);
   });
 });
 

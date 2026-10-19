@@ -99,6 +99,29 @@ const applyCreditScore = (account, rawScore) => {
 };
 
 /**
+ * Per-application snapshot of the credit score.
+ *
+ * The account document keeps only the LATEST score — every new check
+ * overwrites it. A loan application stores its own copy at submit time, so a
+ * score entered for a later loan never rewrites the score an earlier
+ * application was submitted with.
+ *
+ * Returns null until the customer has checked a score.
+ */
+const creditSnapshot = (account) => {
+  const score = asNumberOrNull(account?.creditScore);
+  const checkedAt = account?.creditScoreCheckedAt || null;
+  if (score === null || !checkedAt) return null;
+
+  return {
+    creditScore: score,
+    creditScoreCheckedAt: new Date(checkedAt),
+    creditEligible: score >= MIN_CREDIT_SCORE,
+    creditEligibilityExpiresAt: account?.creditEligibilityExpiresAt || null,
+  };
+};
+
+/**
  * Apply-door guard: score checked, score >= 650, and the 24-hour window active.
  * Throws 403 with a screen-ready message otherwise.
  */
@@ -131,5 +154,6 @@ module.exports = {
   ELIGIBILITY_WINDOW_MS,
   creditStatus,
   applyCreditScore,
+  creditSnapshot,
   assertLoanEligibility,
 };

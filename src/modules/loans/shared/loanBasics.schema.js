@@ -26,6 +26,11 @@ const SERVER_MANAGED_FIELD_NAMES = [
   "applicationNo",
   // Franchise ke apne customer ka record — body se nahi aata, server set karta hai.
   "franchiseCustomer",
+  // Credit score snapshot — account se submit ke waqt copy hota hai, body se nahi.
+  "creditScore",
+  "creditScoreCheckedAt",
+  "creditEligible",
+  "creditEligibilityExpiresAt",
 ];
 
 /** Set by the admin panel (PATCH /{resource}/:id/status), never by an applicant. */
@@ -37,6 +42,23 @@ const ADMIN_REVIEW_FIELDS = {
   approvedAt: { type: Date, default: null },
   rejectedAt: { type: Date, default: null },
   adminNote: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
+};
+
+/*
+==========================================
+Credit score snapshot (same for every product)
+
+Customer account par sirf LATEST score rehta hai (har re-check par overwrite).
+Har application apna snapshot rakhti hai — jo score us application ke submit ke
+waqt valid tha — taaki agle loan ke liye naya score bharne par purani
+application ka score na badle.
+==========================================
+*/
+const CREDIT_SNAPSHOT_FIELDS = {
+  creditScore: { type: Number, default: null, min: 300, max: 900 },
+  creditScoreCheckedAt: { type: Date, default: null },
+  creditEligible: { type: Boolean, default: null },
+  creditEligibilityExpiresAt: { type: Date, default: null },
 };
 
 /*
@@ -66,5 +88,6 @@ module.exports = {
   SERVER_MANAGED_FIELD_NAMES,
   ADMIN_REVIEW_FIELD_NAMES,
   ADMIN_REVIEW_FIELDS,
+  CREDIT_SNAPSHOT_FIELDS,
   FRANCHISE_FIELDS,
 };
