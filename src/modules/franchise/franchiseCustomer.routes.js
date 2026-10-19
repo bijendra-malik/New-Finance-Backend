@@ -24,7 +24,7 @@ Franchise customer API — mounted at /api/franchise/customer
 
   POST   /register                     naya customer register karo (OTP customer
                                        ke phone par jaata hai)
-  POST   /verify-otp                   customer ka OTP -> CUST id banti hai
+  POST   /verify-otp                   customer mobile + OTP -> CUST id banti hai
   POST   /:product/applyloan           usi customer ke liye loan apply karo
                                        e.g. /customer/personal/applyloan
                                             /customer/gold-loan/applyloan
@@ -39,7 +39,7 @@ Franchise customer API — mounted at /api/franchise/customer
 Flow seedha hai — teen step, aur beech me customer ka OTP:
 
   1. POST /register          customer ki details save + uske phone par OTP
-  2. POST /verify-otp        OTP match -> customer ka `users` account + CUST id
+  2. POST /verify-otp        mobile + OTP match -> customer ka `users` account + CUST id
   3. POST /:product/applyloan loan apply (customer verified hona zaroori hai)
 
 Loan apply product ko URL se leta hai; `productFromParam` us segment ko

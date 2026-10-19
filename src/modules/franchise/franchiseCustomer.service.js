@@ -140,7 +140,10 @@ Token franchise ko nahi di jaati (uske paas apni franchise token already hai).
 */
 const verifyCustomerOtp = async (franchise, body = {}) => {
   const payload = unwrap(body);
-  const customer = await getCustomerDoc(franchise, payload.franchiseCustomerId);
+  const mobile = cleanText(payload.mobile);
+  const customer = await FranchiseCustomer.findOne({ mobile, franchise: franchise._id });
+
+  if (!customer) throw notFound("Customer not found for this mobile number");
 
   if (customer.isVerified) {
     throw conflict("This customer's mobile is already verified.");

@@ -37,8 +37,8 @@ exports.register = async (req, res, next) => {
 };
 
 /*
-Customer ka OTP verify — iske bina uske naam par loan file nahi hota.
-POST /api/franchise/customer/verify-otp   { franchiseCustomerId, otp }
+Customer ka OTP verify — customer ke registered mobile number se, bina customer ID ke.
+POST /api/franchise/customer/verify-otp   { mobile, otp }
 */
 exports.verifyCustomerOtp = async (req, res, next) => {
   try {

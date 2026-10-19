@@ -82,7 +82,10 @@ const franchiseLoanApplyValidator = buildProductApplyValidator();
 
 /* Franchise apne customer ka OTP verify karta hai — customer ka record + OTP. */
 const franchiseCustomerOtpValidator = [
-  body("franchiseCustomerId").trim().notEmpty().withMessage("franchiseCustomerId is required"),
+  body("mobile")
+    .trim()
+    .matches(MOBILE_PATTERN)
+    .withMessage("Enter a valid 10-digit customer mobile number"),
   body("otp")
     .trim()
     .matches(/^\d{4,8}$/)
