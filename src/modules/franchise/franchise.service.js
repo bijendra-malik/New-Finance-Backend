@@ -9,6 +9,7 @@ const { nextLoanApplicationNo, nextCustomerId } = require("../../utils/sequence"
 const { MODELS } = require("../loans/shared/loanModels");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
+const { assertLoanEligibility, creditSnapshot } = require("../customer/credit.service");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 
 /*
@@ -227,6 +228,10 @@ const createFranchiseLoan = async (franchise, body = {}) => {
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
   const customer = await resolveCustomerAccount(franchiseCustomer, applicant.email);
 
+  // Franchise applications use the same 650+ score and 24-hour eligibility gate
+  // as direct applications, and persist the customer's current score snapshot.
+  assertLoanEligibility(customer);
+
   const applicationNo = await nextLoanApplicationNo();
 
   const document = buildLoanDocument(product, { ...payload, ...applicant }, customer._id, {
@@ -234,6 +239,7 @@ const createFranchiseLoan = async (franchise, body = {}) => {
     franchiseCode: franchise.franchiseId,
     franchiseCustomer: franchiseCustomer._id,
     applicationNo,
+    credit: creditSnapshot(customer),
   });
 
   const application = await MODELS[product].create(document);

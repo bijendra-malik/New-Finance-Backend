@@ -3,6 +3,7 @@ const { body } = require("express-validator");
 const handleValidationErrors = require("../../middleware/validation.middleware");
 const { buildProductApplyValidator } = require("../loans/shared/productApplyValidator");
 const { entryFieldRules } = require("../auth/auth.validator");
+const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
 /*
 ==========================================
