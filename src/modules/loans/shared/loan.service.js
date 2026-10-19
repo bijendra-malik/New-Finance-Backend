@@ -364,7 +364,7 @@ const createLoanController = (productKey) => {
           return res.status(400).json({ success: false, message: mismatch.message });
         }
 
-        // Credit score checked + 650+ + 24-hour window active hona chahiye.
+        // Credit score checked + 600+ + 24-hour window active hona chahiye.
         assertLoanEligibility(account);
 
         await assertNoExistingDirectApplication(Model, req.user.id);

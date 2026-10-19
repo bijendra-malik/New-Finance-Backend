@@ -49,7 +49,7 @@ exports.loanApply = async (req, res, next) => {
 };
 
 /*
-Credit score submit — eligible (>= 650) hone par 24-hour apply window start.
+Credit score submit — eligible (>= 600) hone par 24-hour apply window start.
 POST /api/customer/credit-score   { creditScore }
 */
 exports.checkCreditScore = async (req, res, next) => {

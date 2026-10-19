@@ -6,8 +6,8 @@ New customer flow:
 
   1. entry + mobile OTP verify
   2. customer submits credit score
-       score >= 650 -> eligible, 24-hour window starts
-       score <  650 -> not eligible
+       score >= 600 -> eligible, 24-hour window starts
+       score <  600 -> not eligible
   3. loan form submit sirf tab tak chalega jab tak window active hai
   4. window beetne ke baad customer phone-OTP login karke score dobara
      check kar sakta hai
@@ -17,7 +17,7 @@ credit-score API kabhi alag-alag decide na karein.
 ==========================================
 */
 
-const MIN_CREDIT_SCORE = 650;
+const MIN_CREDIT_SCORE = 600;
 const CREDIT_SCORE_MIN = 300;
 const CREDIT_SCORE_MAX = 900;
 const ELIGIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -122,7 +122,7 @@ const creditSnapshot = (account) => {
 };
 
 /**
- * Apply-door guard: score checked, score >= 650, and the 24-hour window active.
+ * Apply-door guard: score checked, score >= 600, and the 24-hour window active.
  * Throws 403 with a screen-ready message otherwise.
  */
 const assertLoanEligibility = (account) => {

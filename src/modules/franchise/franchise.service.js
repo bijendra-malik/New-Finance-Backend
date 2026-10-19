@@ -228,7 +228,7 @@ const createFranchiseLoan = async (franchise, body = {}) => {
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
   const customer = await resolveCustomerAccount(franchiseCustomer, applicant.email);
 
-  // Franchise applications use the same 650+ score and 24-hour eligibility gate
+  // Franchise applications use the same 600+ score and 24-hour eligibility gate
   // as direct applications, and persist the customer's current score snapshot.
   assertLoanEligibility(customer);
 

@@ -100,7 +100,7 @@ const userSchema = new mongoose.Schema(
 
       creditScore                    -> last score the customer submitted
       creditScoreCheckedAt           -> when it was submitted
-      creditEligible                 -> score >= 650
+      creditEligible                 -> score >= 600
       creditEligibilityExpiresAt     -> checkedAt + 24 hours (null when not eligible)
 
     Loan apply sirf tab allowed hai jab score qualify kare aur ye window active

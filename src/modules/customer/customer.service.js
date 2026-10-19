@@ -109,7 +109,7 @@ const createCustomerLoan = async (customerId, body = {}, account = null) => {
   const product = resolveProduct(payload);
 
   /*
-  Credit-score gate: score checked, >= 650, aur 24-hour window active.
+  Credit-score gate: score checked, >= 600, aur 24-hour window active.
   `req.account` unified route ke entry-details middleware se aata hai; direct
   service call par account yahin load ho jaata hai.
   */
