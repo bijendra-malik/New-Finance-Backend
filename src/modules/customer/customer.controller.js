@@ -29,19 +29,22 @@ exports.loanApplyForm = async (req, res, next) => {
 };
 
 /*
-Customer Loan Apply (unified — product in body)
+Customer Loan Apply (unified — stores a temporary draft; product in body)
 POST /api/customer/loan-apply
 */
 exports.loanApply = async (req, res, next) => {
   try {
-    const { application, product } = await customerService.createCustomerLoan(req.user.id, req.body, req.account);
+    const draft = await customerService.createCustomerLoanDraft(req.user.id, req.body, req.account);
 
-    res.status(201).json({
+    res.status(202).json({
       success: true,
-      message: "Loan application submitted successfully.",
-      product,
-      loanType: application.loanType,
-      data: application,
+      message: "Loan form saved temporarily. Submit your credit score to complete the application.",
+      product: draft.product,
+      nextStep: "credit-score",
+      draft: {
+        draftId: draft.draftId,
+        expiresAt: draft.expiresAt,
+      },
     });
   } catch (error) {
     next(error);
@@ -49,8 +52,8 @@ exports.loanApply = async (req, res, next) => {
 };
 
 /*
-Credit score submit — eligible (>= 600) hone par 24-hour apply window start.
-POST /api/customer/credit-score   { creditScore }
+Credit score submit — eligible score finalizes the pending draft.
+POST /api/customer/credit-score   { draftId, creditScore }
 */
 exports.checkCreditScore = async (req, res, next) => {
   try {
@@ -59,10 +62,35 @@ exports.checkCreditScore = async (req, res, next) => {
       return res.status(401).json({ success: false, message: ACCOUNT_NOT_FOUND_MESSAGE });
     }
 
+    const { draftId } = req.body;
+    await customerService.requireActiveCustomerLoanDraft(req.user.id, draftId);
+
     const result = applyCreditScore(account, req.body.creditScore);
     await account.save();
 
-    res.json({ success: true, ...result });
+    if (!result.eligible) {
+      return res.json({
+        success: true,
+        ...result,
+        nextStep: "credit-score",
+        draftRetained: true,
+      });
+    }
+
+    const { application, product } = await customerService.finalizeCustomerLoanDraft(
+      req.user.id,
+      draftId,
+      account
+    );
+
+    res.json({
+      success: true,
+      ...result,
+      message: "You are eligible. Your loan application has been submitted successfully.",
+      product,
+      nextStep: "complete",
+      application,
+    });
   } catch (error) {
     next(error);
   }

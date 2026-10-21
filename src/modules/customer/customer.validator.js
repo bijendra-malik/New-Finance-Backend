@@ -26,6 +26,13 @@ Credit score check — customer apna score submit karta hai. Score 300-900 ke
 beech hona chahiye; eligible/not-eligible ka faisla credit.service.js karta hai.
 */
 const creditScoreValidator = [
+  body("draftId")
+    .trim()
+    .notEmpty()
+    .withMessage("Loan form draft ID is required")
+    .bail()
+    .isUUID()
+    .withMessage("Enter a valid loan form draft ID"),
   body("creditScore")
     .exists({ checkNull: true })
     .withMessage("Credit score is required")

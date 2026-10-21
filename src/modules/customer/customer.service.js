@@ -1,7 +1,9 @@
 const mongoose = require("mongoose");
+const { randomUUID } = require("crypto");
 
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const User = require("../auth/user.model");
+const CustomerLoanDraft = require("./customerLoanDraft.model");
 const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
 const { assertLoanEligibility, creditSnapshot } = require("./credit.service");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
@@ -13,12 +15,15 @@ const {
   assertNoExistingDirectApplication,
 } = require("../loans/shared/loan.service");
 
+const LOAN_DRAFT_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 /*
 ==========================================
 Customer side service.
 
   getLoanApplyScreen     GET   /api/customer/loan-apply    (form ka config + bhari hui application)
-  createCustomerLoan     POST  /api/customer/loan-apply       (direct application)
+  createCustomerLoanDraft POST /api/customer/loan-apply       (temporary form draft)
+  finalizeCustomerLoanDraft POST /api/customer/credit-score   (eligible score submits draft)
   listCustomerLoans      GET   /api/customer/loans         (grouped, optional ?status=)
   getCustomerLoanDetail  GET   /api/customer/loans/:applicationNo
   getCustomerLoansByPan  GET   /api/customer/loan-status?panNumber=
@@ -86,46 +91,89 @@ const getLoanApplyScreen = async (
 ) => {
   const product = resolveProduct({ product: rawProduct });
   const data = compactLoanResponse(await getCustomerProductApplication(customerId, product));
+  const pendingDraft = await getActiveCustomerLoanDraft(customerId, null, product);
 
   return {
     product,
     alreadyApplied: Boolean(data),
     canApply: !data,
     data,
+    pendingDraft: pendingDraft
+      ? {
+          draftId: pendingDraft.draftId,
+          expiresAt: pendingDraft.expiresAt,
+          data: pendingDraft.payload,
+        }
+      : null,
   };
 };
 
 /**
- * Create one direct application for the authenticated customer.
- * `franchise` stays null and a fresh `applicationNo` (LOAN000001) is stamped.
- *
- * Response applicant ke liye saaf rehta hai (compactLoanResponse): `franchise` /
- * `franchiseCode` jaise bookkeeping fields — jo direct application me null hote
- * hain — aur khaali values bheji hi nahi jaati. `sections` yahan rehti hai taaki
- * submit ke turant baad client section-wise summary dikha sake.
+ * Store the submitted form temporarily. The loan application is created only
+ * after a qualifying credit score is submitted.
  */
-const createCustomerLoan = async (customerId, body = {}, account = null) => {
+const createCustomerLoanDraft = async (customerId, body = {}, account = null) => {
   const payload = unwrap(body);
   const product = resolveProduct(payload);
-
-  /*
-  Credit-score gate: score checked, >= 600, aur 24-hour window active.
-  `req.account` unified route ke entry-details middleware se aata hai; direct
-  service call par account yahin load ho jaata hai.
-  */
   const customer = account || (await User.findById(customerId));
   if (!customer) throw notFound(ACCOUNT_NOT_FOUND_MESSAGE);
-  assertLoanEligibility(customer);
+  await assertNoExistingDirectApplication(MODELS[product], customerId);
+  // Each customer can have only one active form draft; a new submission replaces it.
+  const draft = await CustomerLoanDraft.findOneAndUpdate(
+    { user: customerId },
+    {
+      $set: {
+        draftId: randomUUID(),
+        product,
+        payload,
+        expiresAt: new Date(Date.now() + LOAN_DRAFT_RETENTION_MS),
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
 
+  return {
+    draftId: draft.draftId,
+    expiresAt: draft.expiresAt,
+    product,
+  };
+};
+
+const getActiveCustomerLoanDraft = async (customerId, draftId = null, product = null) => {
+  const filter = {
+    user: customerId,
+    expiresAt: { $gt: new Date() },
+  };
+  if (draftId) filter.draftId = draftId;
+  if (product) filter.product = product;
+
+  return CustomerLoanDraft.findOne(filter);
+};
+
+const requireActiveCustomerLoanDraft = async (customerId, draftId) => {
+  const draft = await getActiveCustomerLoanDraft(customerId, draftId);
+  if (!draft) {
+    const error = new Error("Loan form draft was not found or has expired. Please submit the loan form again.");
+    error.statusCode = 409;
+    throw error;
+  }
+  return draft;
+};
+
+const finalizeCustomerLoanDraft = async (customerId, draftId, customer) => {
+  const draft = await requireActiveCustomerLoanDraft(customerId, draftId);
+  const product = resolveProduct({ product: draft.product });
+
+  assertLoanEligibility(customer);
   await assertNoExistingDirectApplication(MODELS[product], customerId);
 
   const applicationNo = await nextLoanApplicationNo();
-
-  const document = buildLoanDocument(product, payload, customerId, {
+  const document = buildLoanDocument(product, draft.payload, customerId, {
     applicationNo,
     credit: creditSnapshot(customer),
   });
   const application = await MODELS[product].create(document);
+  await CustomerLoanDraft.deleteOne({ _id: draft._id, user: customerId, draftId });
 
   return {
     application: compactLoanResponse(sanitizeLoanResponse(product, application), { keepSections: true }),
@@ -285,7 +333,10 @@ const getCustomerSummary = async (customerId) => {
 
 module.exports = {
   getLoanApplyScreen,
-  createCustomerLoan,
+  createCustomerLoanDraft,
+  getActiveCustomerLoanDraft,
+  requireActiveCustomerLoanDraft,
+  finalizeCustomerLoanDraft,
   getCustomerProductApplication,
   listCustomerLoans,
   getCustomerLoanDetail,
