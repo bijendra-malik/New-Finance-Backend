@@ -41,11 +41,14 @@ bane.
 exports.entry = async (req, res, next) => {
   try {
     const product = String(req.body.product || "").trim();
+    const body = { ...req.body };
+    delete body.city;
+    delete body.pincode;
 
     const { mobile, mobileMasked } = await entryService.startEntry({
       role: USER_ROLE.CUSTOMER,
       product,
-      body: req.body,
+      body,
     });
 
     const config = LOAN_PRODUCTS[product];

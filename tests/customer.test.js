@@ -16,6 +16,7 @@ const { USER_ROLE } = require("../src/constants/roles");
 const personalLoanController = require("../src/modules/loans/personal-loan/personalLoan.controller");
 const { findEntryDetailMismatch } = require("../src/modules/auth/entryDetails");
 const User = require("../src/modules/auth/user.model");
+const CustomerLoanDraft = require("../src/modules/customer/customerLoanDraft.model");
 
 /** Runs a chain of middlewares (like the real route) and reports the outcome. */
 const runPipeline = (chain, body) =>
@@ -204,6 +205,10 @@ describe("customerController.loanApplyForm", () => {
 });
 
 describe("customerService.getLoanApplyScreen", () => {
+  beforeEach(() => {
+    jest.spyOn(CustomerLoanDraft, "findOne").mockResolvedValue(null);
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
   });

@@ -8,8 +8,8 @@ Entry validators.
 Register/login nahi hai — sirf do step:
 
   1. POST /api/auth/:product      (customer)  ya  POST /api/franchise/entry
-     Dono ka payload bilkul same hai: name, email, mobile, DOB, PAN +
-     continent + country, with optional city and pincode.
+     Customer: name, email, mobile, DOB, PAN, continent + country.
+     Franchise ka entry alag hai aur uske extra fields franchise validator me hain.
   2. POST /api/auth/verify-otp    (customer)  ya  POST /api/franchise/entry/verify
      Mobile + OTP.
 
@@ -31,9 +31,8 @@ const otp = () =>
     .withMessage("Enter a valid OTP");
 
 /**
- * Step 1 ke common field rules — customer ka per-loan entry aur franchise entry
- * dono inhi se shuru hote hain. Franchise entry iske aage plan/business ke apne
- * rules jodta hai (franchise.validator.js), isliye ye alag rakhe gaye hain.
+ * Basic identity and location rules shared by customer and franchise entry.
+ * Franchise-only fields are defined in franchise.validator.js.
  */
 const entryFieldRules = [
   body("name").trim().notEmpty().withMessage("Name is required"),
@@ -57,8 +56,6 @@ const entryFieldRules = [
   /* Location fields are optional so older clients remain compatible. */
   body("continent").optional().trim(),
   body("country").optional().trim(),
-  body("city").optional().trim(),
-  body("pincode").optional().trim(),
 ];
 
 /** Step 1 — customer ka entry form. */

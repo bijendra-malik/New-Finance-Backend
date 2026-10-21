@@ -29,6 +29,8 @@ Kam se kam ek bhejna zaroori hai.
 */
 const franchiseEntryValidator = [
   ...entryFieldRules,
+  body("city").optional().trim(),
+  body("pincode").optional().trim(),
   body("planCode")
     .trim()
     .custom((value, { req }) => {
