@@ -5,12 +5,11 @@ Credit-score eligibility.
 New customer flow:
 
   1. entry + mobile OTP verify
-  2. customer submits credit score
-       score >= 600 -> eligible, 24-hour window starts
-       score <  600 -> not eligible
-  3. loan form submit sirf tab tak chalega jab tak window active hai
-  4. window beetne ke baad customer phone-OTP login karke score dobara
-     check kar sakta hai
+  2. customer submits the loan form; it is held as a temporary draft
+  3. customer submits a credit score for that draft
+       score >= 600 -> eligible, draft is finalized, 24-hour window starts
+       score <  600 -> not eligible; draft can be retried for 24 hours
+  4. after the eligibility window expires, phone-OTP login can re-check score
 
 Ye rules ek hi jagah hain taaki apply endpoints (per-product + unified) aur
 credit-score API kabhi alag-alag decide na karein.

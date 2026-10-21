@@ -50,7 +50,7 @@ const verifiedAccount = {
   email: "rohit@example.com",
   dob: "1992-06-15",
   panNumber: "ABCDE1234F",
-  // Apply ab credit-score gate ke peeche hai (650+ aur 24-hour window).
+  // Apply ab credit-score gate ke peeche hai (600+ aur 24-hour window).
   creditScore: 720,
   creditScoreCheckedAt: new Date(),
   creditEligible: true,

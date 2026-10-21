@@ -15,25 +15,25 @@ const account = (overrides = {}) => ({
 });
 
 describe("credit score eligibility", () => {
-  it("marks a score below 650 as not eligible and starts no window", () => {
+  it("marks a score below 600 as not eligible and starts no window", () => {
     const user = account();
-    const result = applyCreditScore(user, 649);
+    const result = applyCreditScore(user, 599);
 
-    expect(result.creditScore).toBe(649);
+    expect(result.creditScore).toBe(599);
     expect(result.eligible).toBe(false);
     expect(result.expiresAt).toBeNull();
     expect(result.remainingSeconds).toBe(0);
     expect(user.creditEligible).toBe(false);
-    expect(result.message).toContain("below 650");
+    expect(result.message).toContain("below 600");
   });
 
-  it("treats 650 as eligible and starts a 24-hour window", () => {
+  it("treats 600 as eligible and starts a 24-hour window", () => {
     const user = account();
     const before = Date.now();
     const result = applyCreditScore(user, MIN_CREDIT_SCORE);
 
     expect(result.eligible).toBe(true);
-    expect(result.creditScore).toBe(650);
+    expect(result.creditScore).toBe(600);
     expect(result.expiresAt).toBeTruthy();
     expect(new Date(result.expiresAt).getTime()).toBeGreaterThanOrEqual(before + 24 * 60 * 60 * 1000 - 1000);
     expect(result.remainingSeconds).toBeGreaterThan(86000);
@@ -99,11 +99,11 @@ describe("credit score eligibility", () => {
     );
   });
 
-  it("blocks apply when the score is below 650", () => {
+  it("blocks apply when the score is below 600", () => {
     const user = account();
-    applyCreditScore(user, 600);
+    applyCreditScore(user, 599);
 
-    expect(() => assertLoanEligibility(user)).toThrow("Your credit score is below 650");
+    expect(() => assertLoanEligibility(user)).toThrow("Your credit score is below 600");
   });
 
   it("blocks apply after the 24-hour window expires", () => {
