@@ -1,5 +1,9 @@
 const { LOAN_PRODUCTS } = require("./loanProducts");
 const { MODELS } = require("./loanModels");
+const {
+  hasRecentDirectApplication,
+  createApplicationCooldownError,
+} = require("./loanApplicationCooldown");
 const { USER_ROLE } = require("../../../constants/roles");
 const { nextLoanApplicationNo } = require("../../../utils/sequence");
 const User = require("../../auth/user.model");
@@ -130,11 +134,9 @@ const supportsTransactionBanks = (employmentType) =>
   incomeFieldNamesForEmploymentType(employmentType).includes("transactionBankName");
 
 const assertNoExistingDirectApplication = async (Model, userId) => {
-  const existingApplication = await Model.exists({ user: userId, franchise: null });
+  const existingApplication = await hasRecentDirectApplication(Model, userId);
   if (existingApplication) {
-    const error = new Error("You have already applied for this loan product.");
-    error.statusCode = 409;
-    throw error;
+    throw createApplicationCooldownError(existingApplication, "this loan product");
   }
 };
 
