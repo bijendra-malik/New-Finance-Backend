@@ -6,20 +6,29 @@ const { PAN_PATTERN, MOBILE_PATTERN, PINCODE_PATTERN } = require("./helpers");
  * =========================================================================
  * fullName and mobile are ALWAYS required.
  * The rest become required only when config.personalDetailsRequired is true.
- * config.adultApplicant (Loan Against Property) also forces an 18+ date of birth.
+ * Applicant date of birth must indicate an age of at least 21 years.
  * ========================================================================= */
 
-/** The applicant must be 18 or older, and the date of birth must be in the past. */
+const MIN_APPLICANT_AGE = 21;
+
+/** The applicant must be at least 21 years old, and the DOB cannot be in the future. */
 const adultApplicantCheck = (value) => {
   const dob = new Date(value);
   const today = new Date();
+  dob.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
 
   if (Number.isNaN(dob.getTime())) throw new Error("Enter a valid date of birth");
   if (dob > today) throw new Error("Date of birth cannot be in the future");
 
-  const eighteenYearsAgo = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
-  if (dob > eighteenYearsAgo) throw new Error("Applicant must be at least 18 years old");
+  const minimumDateOfBirth = new Date(
+    today.getFullYear() - MIN_APPLICANT_AGE,
+    today.getMonth(),
+    today.getDate()
+  );
+  if (dob > minimumDateOfBirth) {
+    throw new Error(`Applicant must be at least ${MIN_APPLICANT_AGE} years old`);
+  }
 
   return true;
 };
@@ -32,13 +41,12 @@ const personalDetailsRules = (config) => {
     body("fullName").trim().notEmpty().withMessage("Full name is required"),
     body("mobile").trim().matches(MOBILE_PATTERN).withMessage("Enter a valid 10-digit mobile number"),
     requiredOrOptional("email").trim().isEmail().withMessage("Enter a valid email address"),
-    requiredOrOptional("dob").isISO8601().withMessage("Enter a valid date of birth"),
+    requiredOrOptional("dob")
+      .isISO8601()
+      .withMessage("Enter a valid date of birth")
+      .custom(adultApplicantCheck),
     requiredOrOptional("panNumber").trim().matches(PAN_PATTERN).withMessage("Enter a valid PAN number"),
   ];
-
-  if (config.adultApplicant) {
-    chain[3] = body("dob").isISO8601().withMessage("Date of birth is required").custom(adultApplicantCheck);
-  }
 
   if (required) {
     chain.push(body("state").trim().notEmpty().withMessage("State is required"));
@@ -56,4 +64,4 @@ const personalDetailsRules = (config) => {
   return chain;
 };
 
-module.exports = { personalDetailsRules, adultApplicantCheck };
+module.exports = { personalDetailsRules, adultApplicantCheck, MIN_APPLICANT_AGE };
