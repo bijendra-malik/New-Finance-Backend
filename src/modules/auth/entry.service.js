@@ -8,6 +8,10 @@ const { nextCustomerId } = require("../../utils/sequence");
 const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { MODELS } = require("../loans/shared/loanModels");
+const {
+  hasRecentDirectApplication,
+  createApplicationCooldownError,
+} = require("../loans/shared/loanApplicationCooldown");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 const { creditStatus } = require("../customer/credit.service");
 
@@ -407,15 +411,13 @@ const startEntry = async ({
   const details = buildPendingDetails(body);
 
   if (!isFranchise && !franchiseCustomer) {
-    const existingCustomer = await User.findOne({ mobile: details.mobile });
-    const loanModel = MODELS[product];
-    const existingApplication = existingCustomer
-      ? await loanModel.exists({ user: existingCustomer._id, franchise: null })
-      : null;
-
-    if (existingApplication) {
+    const existingCustomer = await User.findOne({
+      role: USER_ROLE.CUSTOMER,
+      $or: [{ mobile: details.mobile }, { email: details.email }],
+    });
+    if (existingCustomer) {
       throw conflict(
-        `You have already applied for the ${LOAN_PRODUCTS[product].loanType}. Please login with your mobile number to continue.`
+        "You are already registered. Please login using your registered mobile number and OTP."
       );
     }
   }
@@ -621,14 +623,16 @@ const startLogin = async ({ mobile } = {}) => {
   return { mobile: number, mobileMasked: maskMobile(number) };
 };
 
-const verifyLogin = async ({ mobile, otp } = {}) => {
+const verifyLogin = async ({ mobile, otp, product } = {}) => {
   const number = cleanText(mobile);
   const submittedOtp = cleanText(otp);
+  const selectedProduct = cleanText(product);
 
   if (!MOBILE_REGEX.test(number)) {
     throw badRequest("Enter a valid 10-digit mobile number");
   }
   if (!submittedOtp) throw badRequest("OTP is required");
+  if (!LOAN_PRODUCTS[selectedProduct]) throw badRequest("A valid loan product is required");
 
   const otpData = await OTP.findOne({ mobile: number, purpose: "login" });
   if (!otpData) throw badRequest("OTP Not Found. Please request a new OTP.");
@@ -640,6 +644,15 @@ const verifyLogin = async ({ mobile, otp } = {}) => {
   }
   if (account.role === USER_ROLE.FRANCHISE) {
     throw badRequest("Franchise accounts must login with their franchise ID and password.");
+  }
+
+  const recentApplication = await hasRecentDirectApplication(
+    MODELS[selectedProduct],
+    account._id
+  );
+  if (recentApplication) {
+    await OTP.deleteMany({ mobile: number, purpose: "login" });
+    throw createApplicationCooldownError(recentApplication, LOAN_PRODUCTS[selectedProduct].loanType);
   }
 
   account.lastLogin = new Date();

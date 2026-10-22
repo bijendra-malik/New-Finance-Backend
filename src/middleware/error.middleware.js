@@ -27,12 +27,16 @@ module.exports = (err, req, res, next) => {
         message = `${field} "${value}" already exists`;
     }
 
-    res.status(statusCode).json({
+    const response = {
 
         success: false,
 
         message
 
-    });
+    };
+
+    if (err.retryAfter) response.retryAfter = err.retryAfter;
+
+    res.status(statusCode).json(response);
 
 };

@@ -119,7 +119,7 @@ exports.loginRequestOtp = async (req, res, next) => {
 
 /*
 Customer login — Step 2.
-POST /api/auth/login/verify-otp   { mobile, otp }
+POST /api/auth/login/:product/verify-otp   { mobile, otp }
 
 Login token product-locked nahi hota: customer credit score check karke koi bhi
 loan product choose kar sakta hai.
@@ -129,6 +129,7 @@ exports.loginVerify = async (req, res, next) => {
     const result = await entryService.verifyLogin({
       mobile: req.body.mobile,
       otp: req.body.otp,
+      product: req.body.product,
     });
 
     res.json({
