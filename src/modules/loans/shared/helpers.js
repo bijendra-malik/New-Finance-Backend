@@ -21,7 +21,7 @@ const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const GST_PATTERN = /^[0-9A-Z]{15}$/;
 const DATE_PATTERN = /^(\d{4}-\d{2}-\d{2}(?:T.*)?|\d{2}\/\d{2}\/\d{4})$/;
 const PINCODE_PATTERN = /^\d{6}$/;
-const MOBILE_PATTERN = /^\d{10}$/;
+const MOBILE_PATTERN = /^[1-9]\d{9}$/;
 
 /** Required only when the applicant picked this one employment type. */
 const requiredIf = (field, employmentType, message) =>
