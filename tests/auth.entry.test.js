@@ -8,6 +8,11 @@ jest.mock("../src/modules/auth/user.model", () => {
   return User;
 });
 jest.mock("../src/modules/franchise/franchise.model", () => ({ findOne: jest.fn() }));
+jest.mock("../src/modules/loans/shared/loanModels", () => ({
+  MODELS: {
+    projectLoan: { exists: jest.fn() },
+  },
+}));
 jest.mock("../src/modules/auth/otp.model", () => ({
   findOne: jest.fn(),
   create: jest.fn().mockResolvedValue({}),
@@ -23,7 +28,66 @@ const OTP = require("../src/modules/auth/otp.model");
 const sendOTP = require("../src/utils/sendOTP");
 const generateToken = require("../src/utils/generateToken");
 const { USER_ROLE } = require("../src/constants/roles");
-const { verifyEntry, startLogin, verifyLogin } = require("../src/modules/auth/entry.service");
+const { MODELS } = require("../src/modules/loans/shared/loanModels");
+const { startEntry, verifyEntry, startLogin, verifyLogin } = require("../src/modules/auth/entry.service");
+
+describe("customer auth entry for existing applications", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    User.findOne.mockResolvedValue(null);
+    MODELS.projectLoan.exists.mockResolvedValue(null);
+    OTP.deleteMany.mockResolvedValue({ deletedCount: 1 });
+    OTP.create.mockResolvedValue({});
+    sendOTP.mockResolvedValue(true);
+  });
+
+  it("asks an existing applicant to login instead of sending another entry OTP", async () => {
+    User.findOne.mockResolvedValue({ _id: "customer-id", mobile: "9876543210" });
+    MODELS.projectLoan.exists.mockResolvedValue({ _id: "application-id" });
+
+    await expect(
+      startEntry({
+        role: USER_ROLE.CUSTOMER,
+        product: "projectLoan",
+        body: {
+          name: "Abhishek Sharma",
+          email: "abhishek@example.com",
+          mobile: "9876543210",
+          dob: "1995-05-15",
+          panNumber: "ABCDE1234F",
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Please login with your mobile number"),
+    });
+
+    expect(MODELS.projectLoan.exists).toHaveBeenCalledWith({
+      user: "customer-id",
+      franchise: null,
+    });
+    expect(sendOTP).not.toHaveBeenCalled();
+  });
+
+  it("continues entry when the existing customer has no application for this product", async () => {
+    User.findOne.mockResolvedValue({ _id: "customer-id", mobile: "9876543210" });
+
+    const result = await startEntry({
+      role: USER_ROLE.CUSTOMER,
+      product: "projectLoan",
+      body: {
+        name: "Abhishek Sharma",
+        email: "abhishek@example.com",
+        mobile: "9876543210",
+        dob: "1995-05-15",
+        panNumber: "ABCDE1234F",
+      },
+    });
+
+    expect(result.product).toBe("projectLoan");
+    expect(sendOTP).toHaveBeenCalledWith("9876543210", expect.any(String));
+  });
+});
 
 describe("verifyEntry", () => {
   beforeEach(() => {

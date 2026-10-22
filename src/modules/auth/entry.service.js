@@ -7,6 +7,7 @@ const franchisePlanService = require("../franchise/franchisePlan.service");
 const { nextCustomerId } = require("../../utils/sequence");
 const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
+const { MODELS } = require("../loans/shared/loanModels");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 const { creditStatus } = require("../customer/credit.service");
 
@@ -404,6 +405,20 @@ const startEntry = async ({
   }
 
   const details = buildPendingDetails(body);
+
+  if (!isFranchise && !franchiseCustomer) {
+    const existingCustomer = await User.findOne({ mobile: details.mobile });
+    const loanModel = MODELS[product];
+    const existingApplication = existingCustomer
+      ? await loanModel.exists({ user: existingCustomer._id, franchise: null })
+      : null;
+
+    if (existingApplication) {
+      throw conflict(
+        `You have already applied for the ${LOAN_PRODUCTS[product].loanType}. Please login with your mobile number to continue.`
+      );
+    }
+  }
 
   // Jo franchise already approved hai usko dobara entry ki zaroorat nahi — login kare.
   if (isFranchise) {
