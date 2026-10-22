@@ -11,6 +11,7 @@ const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
 const { assertLoanEligibility, creditSnapshot } = require("../customer/credit.service");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
+const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
 /*
 ==========================================
@@ -158,7 +159,9 @@ const applicantFromCustomer = (franchiseCustomer, payload) => {
  */
 const resolveCustomerAccount = async (franchiseCustomer, email) => {
   const mobile = cleanText(franchiseCustomer.mobile);
-  if (!/^\d{10}$/.test(mobile)) throw badRequest("Customer mobile (10 digits) is required");
+  if (!MOBILE_PATTERN.test(mobile)) {
+    throw badRequest("Customer mobile must be a valid 10-digit number that does not start with 0");
+  }
 
   const existing = await User.findOne({ mobile });
   if (existing) {

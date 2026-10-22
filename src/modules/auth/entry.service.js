@@ -8,6 +8,7 @@ const { nextCustomerId } = require("../../utils/sequence");
 const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { MODELS } = require("../loans/shared/loanModels");
+const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 const {
   hasRecentDirectApplication,
   createApplicationCooldownError,
@@ -43,7 +44,7 @@ details bhi pending rehti hain aur verify par franchise hi Pending ban jaata hai
 */
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-const MOBILE_REGEX = /^\d{10}$/;
+const MOBILE_REGEX = MOBILE_PATTERN;
 
 const badRequest = (message) => {
   const error = new Error(message);

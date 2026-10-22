@@ -1,5 +1,6 @@
 const { body } = require("express-validator");
 const handleValidationErrors = require("../../middleware/validation.middleware");
+const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
 /*
 ==========================================
@@ -21,7 +22,7 @@ case handle nahi karna padta.
 const mobile = () =>
   body("mobile")
     .trim()
-    .matches(/^\d{10}$/)
+    .matches(MOBILE_PATTERN)
     .withMessage("Enter a valid 10-digit mobile number");
 
 const otp = () =>

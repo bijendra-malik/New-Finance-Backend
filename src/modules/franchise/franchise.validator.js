@@ -58,7 +58,7 @@ const franchiseEntryValidator = [
 const franchiseStatusOtpRequestValidator = [
   body("mobile")
     .trim()
-    .matches(/^\d{10}$/)
+    .matches(MOBILE_PATTERN)
     .withMessage("Enter a valid 10-digit mobile number"),
   body("panNumber")
     .trim()
@@ -71,7 +71,7 @@ const franchiseStatusOtpRequestValidator = [
 const franchiseStatusValidator = [
   body("mobile")
     .trim()
-    .matches(/^\d{10}$/)
+    .matches(MOBILE_PATTERN)
     .withMessage("Enter a valid 10-digit mobile number"),
   body("otp")
     .trim()

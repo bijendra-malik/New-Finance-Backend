@@ -4,6 +4,7 @@ const sendOTP = require("../../utils/sendOTP");
 const { freshOtp, maskMobile } = require("../../utils/otp");
 const { MODELS, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { buildStatusView } = require("../customer/customer.service");
+const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
 /*
 ==========================================
@@ -77,7 +78,7 @@ const findStatusCustomer = async ({ customerId, panNumber }) => {
 /** Resolve a customer record by its registered mobile before checking the OTP. */
 const findStatusCustomerByMobile = async (mobile) => {
   const number = cleanText(mobile);
-  if (!/^\d{10}$/.test(number)) {
+  if (!MOBILE_PATTERN.test(number)) {
     throw badRequest("Enter a valid 10-digit mobile number");
   }
 

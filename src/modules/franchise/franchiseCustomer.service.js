@@ -8,6 +8,7 @@ const { buildStatusView } = require("../customer/customer.service");
 const { applyCreditScore } = require("../customer/credit.service");
 const entryService = require("../auth/entry.service");
 const { USER_ROLE } = require("../../constants/roles");
+const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
 /*
 ==========================================
@@ -76,7 +77,9 @@ const registerCustomer = async (franchise, body = {}) => {
   const email = cleanText(payload.email).toLowerCase();
 
   if (!fullName) throw badRequest("Customer full name is required");
-  if (!/^\d{10}$/.test(mobile)) throw badRequest("Enter a valid 10-digit mobile number");
+  if (!MOBILE_PATTERN.test(mobile)) {
+    throw badRequest("Enter a valid 10-digit mobile number");
+  }
   if (!panNumber || !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panNumber)) {
     throw badRequest("Enter a valid PAN number (e.g. ABCDE1234F)");
   }
