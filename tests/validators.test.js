@@ -782,9 +782,24 @@ describe("loanAgainstPropertyValidators.applyValidator", () => {
     expect(result.passed).toBe(false);
   });
 
-  it("rejects an applicant younger than 18", async () => {
-    const result = await runChain(lapApplyValidator, lapPayload({ dob: "2015-01-01" }));
+  it("rejects an applicant younger than 21", async () => {
+    const under21Dob = new Date();
+    under21Dob.setFullYear(under21Dob.getFullYear() - 20);
+    const result = await runChain(
+      lapApplyValidator,
+      lapPayload({ dob: under21Dob.toISOString().slice(0, 10) })
+    );
     expect(result.passed).toBe(false);
+  });
+
+  it("accepts an applicant who has reached 21", async () => {
+    const age21Dob = new Date();
+    age21Dob.setFullYear(age21Dob.getFullYear() - 21);
+    const result = await runChain(
+      lapApplyValidator,
+      lapPayload({ dob: age21Dob.toISOString().slice(0, 10) })
+    );
+    expect(result.passed).toBe(true);
   });
 });
 

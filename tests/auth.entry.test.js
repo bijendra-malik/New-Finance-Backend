@@ -117,6 +117,23 @@ describe("customer auth entry for existing applications", () => {
     });
     expect(sendOTP).not.toHaveBeenCalled();
   });
+
+  it("rejects entry applicants younger than 21 before sending OTP", async () => {
+    const under21Dob = new Date();
+    under21Dob.setFullYear(under21Dob.getFullYear() - 20);
+
+    await expect(
+      startEntry({
+        role: USER_ROLE.CUSTOMER,
+        product: "projectLoan",
+        body: { ...entryBody, dob: under21Dob.toISOString().slice(0, 10) },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Applicant must be at least 21 years old to apply for a loan",
+    });
+    expect(sendOTP).not.toHaveBeenCalled();
+  });
 });
 
 describe("verifyEntry", () => {
