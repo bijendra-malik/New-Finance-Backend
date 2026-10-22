@@ -11,7 +11,19 @@ jest.mock("../src/modules/franchise/franchise.model", () => ({ findOne: jest.fn(
 jest.mock("../src/modules/loans/shared/loanModels", () => ({
   MODELS: {
     projectLoan: { exists: jest.fn() },
+    fdiLoan: { exists: jest.fn() },
   },
+}));
+jest.mock("../src/modules/loans/shared/loanApplicationCooldown", () => ({
+  hasRecentDirectApplication: jest.fn(),
+  createApplicationCooldownError: jest.fn((application, loanType) => {
+    const error = new Error(
+      `You have already applied for the ${loanType}. Please wait 1 day, 2 hours before applying again.`
+    );
+    error.statusCode = 409;
+    error.retryAfter = { days: 1, hours: 2, minutes: 0, seconds: 0, availableAt: "2026-10-23T00:00:00.000Z" };
+    return error;
+  }),
 }));
 jest.mock("../src/modules/auth/otp.model", () => ({
   findOne: jest.fn(),
@@ -29,62 +41,66 @@ const sendOTP = require("../src/utils/sendOTP");
 const generateToken = require("../src/utils/generateToken");
 const { USER_ROLE } = require("../src/constants/roles");
 const { MODELS } = require("../src/modules/loans/shared/loanModels");
+const {
+  hasRecentDirectApplication,
+  createApplicationCooldownError,
+} = require("../src/modules/loans/shared/loanApplicationCooldown");
 const { startEntry, verifyEntry, startLogin, verifyLogin } = require("../src/modules/auth/entry.service");
 
 describe("customer auth entry for existing applications", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     User.findOne.mockResolvedValue(null);
-    MODELS.projectLoan.exists.mockResolvedValue(null);
     OTP.deleteMany.mockResolvedValue({ deletedCount: 1 });
     OTP.create.mockResolvedValue({});
     sendOTP.mockResolvedValue(true);
   });
 
-  it("asks an existing applicant to login instead of sending another entry OTP", async () => {
+  const entryBody = {
+    name: "Abhishek Sharma",
+    email: "abhishek@example.com",
+    mobile: "9876543210",
+    dob: "1995-05-15",
+    panNumber: "ABCDE1234F",
+  };
+
+  it("directs a customer with a registered mobile to login instead of creating an entry OTP", async () => {
     User.findOne.mockResolvedValue({ _id: "customer-id", mobile: "9876543210" });
-    MODELS.projectLoan.exists.mockResolvedValue({ _id: "application-id" });
 
     await expect(
-      startEntry({
-        role: USER_ROLE.CUSTOMER,
-        product: "projectLoan",
-        body: {
-          name: "Abhishek Sharma",
-          email: "abhishek@example.com",
-          mobile: "9876543210",
-          dob: "1995-05-15",
-          panNumber: "ABCDE1234F",
-        },
-      })
+      startEntry({ role: USER_ROLE.CUSTOMER, product: "projectLoan", body: entryBody })
     ).rejects.toMatchObject({
       statusCode: 409,
-      message: expect.stringContaining("Please login with your mobile number"),
+      message: "You are already registered. Please login using your registered mobile number and OTP.",
     });
 
-    expect(MODELS.projectLoan.exists).toHaveBeenCalledWith({
-      user: "customer-id",
-      franchise: null,
+    expect(User.findOne).toHaveBeenCalledWith({
+      role: USER_ROLE.CUSTOMER,
+      $or: [{ mobile: "9876543210" }, { email: "abhishek@example.com" }],
     });
+    expect(OTP.create).not.toHaveBeenCalled();
     expect(sendOTP).not.toHaveBeenCalled();
   });
 
-  it("continues entry when the existing customer has no application for this product", async () => {
-    User.findOne.mockResolvedValue({ _id: "customer-id", mobile: "9876543210" });
+  it("directs a customer with a registered email to login by mobile OTP", async () => {
+    User.findOne.mockResolvedValue({ _id: "customer-id", mobile: "9999999999" });
 
+    await expect(
+      startEntry({ role: USER_ROLE.CUSTOMER, product: "projectLoan", body: entryBody })
+    ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("already registered") });
+
+    expect(sendOTP).not.toHaveBeenCalled();
+  });
+
+  it("sends an entry OTP when neither mobile nor email is registered", async () => {
     const result = await startEntry({
       role: USER_ROLE.CUSTOMER,
       product: "projectLoan",
-      body: {
-        name: "Abhishek Sharma",
-        email: "abhishek@example.com",
-        mobile: "9876543210",
-        dob: "1995-05-15",
-        panNumber: "ABCDE1234F",
-      },
+      body: entryBody,
     });
 
     expect(result.product).toBe("projectLoan");
+    expect(hasRecentDirectApplication).not.toHaveBeenCalled();
     expect(sendOTP).toHaveBeenCalledWith("9876543210", expect.any(String));
   });
 });
@@ -330,6 +346,7 @@ describe("verifyEntry", () => {
 describe("customer login (phone OTP)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    hasRecentDirectApplication.mockResolvedValue(null);
     sendOTP.mockResolvedValue(true);
     OTP.create.mockResolvedValue({});
     OTP.deleteMany.mockResolvedValue({ deletedCount: 1 });
@@ -355,7 +372,7 @@ describe("customer login (phone OTP)", () => {
     expect(sendOTP).toHaveBeenCalled();
   });
 
-  it("verifies the login OTP and returns a product-free login token", async () => {
+  it("verifies login OTP for the selected product and returns an unrestricted login token", async () => {
     OTP.findOne.mockResolvedValue({
       mobile: "9876543210",
       otp: "123456",
@@ -370,9 +387,10 @@ describe("customer login (phone OTP)", () => {
       save: jest.fn().mockResolvedValue(undefined),
     });
 
-    const result = await verifyLogin({ mobile: "9876543210", otp: "123456" });
+    const result = await verifyLogin({ mobile: "9876543210", otp: "123456", product: "fdiLoan" });
 
     expect(result.token).toBe("test-token");
+    expect(hasRecentDirectApplication).toHaveBeenCalledWith(MODELS.fdiLoan, "u1");
     expect(generateToken).toHaveBeenCalledWith(expect.anything(), { login: true });
     expect(result.nextStep).toBe("credit-score");
     expect(OTP.deleteMany).toHaveBeenCalledWith({ mobile: "9876543210", purpose: "login" });
@@ -381,6 +399,33 @@ describe("customer login (phone OTP)", () => {
   it("rejects a wrong OTP", async () => {
     OTP.findOne.mockResolvedValue({ mobile: "9876543210", otp: "123456", save: jest.fn() });
 
-    await expect(verifyLogin({ mobile: "9876543210", otp: "999999" })).rejects.toThrow("Invalid OTP");
+    await expect(
+      verifyLogin({ mobile: "9876543210", otp: "999999", product: "fdiLoan" })
+    ).rejects.toThrow("Invalid OTP");
+  });
+
+  it("rejects login verification when the selected product has a recent application", async () => {
+    OTP.findOne.mockResolvedValue({ mobile: "9876543210", otp: "123456" });
+    User.findOne.mockResolvedValue({
+      _id: "u1",
+      mobile: "9876543210",
+      role: USER_ROLE.CUSTOMER,
+      save: jest.fn(),
+    });
+    hasRecentDirectApplication.mockResolvedValue({ _id: "application-id" });
+
+    await expect(
+      verifyLogin({ mobile: "9876543210", otp: "123456", product: "fdiLoan" })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "You have already applied for the FDI Loan. Please wait 1 day, 2 hours before applying again.",
+      retryAfter: { days: 1, hours: 2, minutes: 0, seconds: 0 },
+    });
+    expect(createApplicationCooldownError).toHaveBeenCalledWith(
+      { _id: "application-id" },
+      "FDI Loan"
+    );
+    expect(OTP.deleteMany).toHaveBeenCalledWith({ mobile: "9876543210", purpose: "login" });
+    expect(generateToken).not.toHaveBeenCalled();
   });
 });

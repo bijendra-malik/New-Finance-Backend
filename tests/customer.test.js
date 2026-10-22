@@ -153,12 +153,37 @@ describe("customerService.getCustomerProductApplication", () => {
   });
 
   it("blocks a second direct application for the same product with HTTP 409", async () => {
-    jest.spyOn(MODELS.personal, "exists").mockResolvedValue({ _id: "application-id" });
+    const existingApplication = {
+      _id: "application-id",
+      createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+    };
+    const query = {
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(existingApplication),
+    };
+    const findOne = jest.spyOn(MODELS.personal, "findOne").mockReturnValue(query);
 
-    await expect(assertNoExistingDirectApplication(MODELS.personal, "customer-id")).rejects.toMatchObject({
-      statusCode: 409,
-      message: "You have already applied for this loan product.",
-    });
+    const error = await assertNoExistingDirectApplication(MODELS.personal, "customer-id").catch(
+      (caught) => caught
+    );
+    expect(error.statusCode).toBe(409);
+    expect(error.message).toContain("Please wait");
+    expect(error.retryAfter).toEqual(
+      expect.objectContaining({
+        days: 2,
+        availableAt: expect.any(String),
+      })
+    );
+    expect(findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: "customer-id",
+        franchise: null,
+        createdAt: expect.objectContaining({ $gt: expect.any(Date) }),
+      })
+    );
+    expect(query.sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(query.select).toHaveBeenCalledWith({ createdAt: 1 });
   });
 });
 
