@@ -175,7 +175,7 @@ describe("verifyEntry", () => {
       })
     );
     expect(result.token).toBe("test-token");
-    expect(result.nextStep).toBe("credit-score");
+    expect(result.nextStep).toBe("loan-apply");
     expect(result.credit.eligible).toBe(false);
     expect(OTP.deleteMany).not.toHaveBeenCalled();
   });
@@ -423,15 +423,22 @@ describe("customer login (phone OTP)", () => {
       mobile: "9876543210",
       role: USER_ROLE.CUSTOMER,
       customerId: "CUST000001",
+      creditScore: 800,
+      creditScoreCheckedAt: new Date("2026-10-19T10:19:50.689Z"),
+      creditEligible: true,
+      creditEligibilityExpiresAt: new Date("2026-10-20T10:19:50.689Z"),
       save: jest.fn().mockResolvedValue(undefined),
     });
 
-    const result = await verifyLogin({ mobile: "9876543210", otp: "123456", product: "fdiLoan" });
+    const result = await verifyLogin({ mobile: "9876543210", otp: "123456", product: "goldLoan" });
 
     expect(result.token).toBe("test-token");
-    expect(hasRecentDirectApplication).toHaveBeenCalledWith(MODELS.fdiLoan, "u1");
+    expect(result.product).toBe("goldLoan");
+    expect(result.loanType).toBe("Gold Loan");
+    expect(result.nextStep).toBe("loan-apply");
+    expect(result).not.toHaveProperty("credit");
+    expect(hasRecentDirectApplication).toHaveBeenCalledWith(MODELS.goldLoan, "u1");
     expect(generateToken).toHaveBeenCalledWith(expect.anything(), { login: true });
-    expect(result.nextStep).toBe("credit-score");
     expect(OTP.deleteMany).toHaveBeenCalledWith({ mobile: "9876543210", purpose: "login" });
   });
 

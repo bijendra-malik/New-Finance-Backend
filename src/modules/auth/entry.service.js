@@ -370,7 +370,7 @@ const buildResponse = ({ role, account, product }) => {
     customerId: account.customerId,
     product,
     loanType: config ? config.loanType : "",
-    nextStep: credit.eligible ? "loan-apply" : "credit-score",
+    nextStep: "loan-apply",
     credit,
     user: {
       _id: account._id,
@@ -666,7 +666,12 @@ const verifyLogin = async ({ mobile, otp, product } = {}) => {
   // Login OTP single-use: verify hone ke baad hata do.
   await OTP.deleteMany({ mobile: number, purpose: "login" });
 
-  const payload = buildResponse({ role: USER_ROLE.CUSTOMER, account, product: "" });
+  const payload = buildResponse({
+    role: USER_ROLE.CUSTOMER,
+    account,
+    product: selectedProduct,
+  });
+  delete payload.credit;
 
   return { token: generateToken(account, { login: true }), ...payload };
 };
