@@ -9,6 +9,7 @@ const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { MODELS } = require("../loans/shared/loanModels");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
+const { MIN_APPLICANT_AGE } = require("../loans/shared/personalDetails.rules");
 const {
   hasRecentDirectApplication,
   createApplicationCooldownError,
@@ -79,9 +80,9 @@ const unwrap = (body) =>
 /** Poori umar (saal me). */
 const ageInYears = (birthDate) => {
   const now = new Date();
-  let age = now.getFullYear() - birthDate.getFullYear();
-  const monthDiff = now.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) age -= 1;
+  let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
+  const monthDiff = now.getUTCMonth() - birthDate.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < birthDate.getUTCDate())) age -= 1;
   return age;
 };
 
@@ -130,8 +131,8 @@ const buildPendingDetails = (body = {}) => {
   if (!dob || Number.isNaN(dob.getTime())) {
     throw badRequest("Enter a valid date of birth (YYYY-MM-DD)");
   }
-  if (ageInYears(dob) < 18) {
-    throw badRequest("Applicant must be at least 18 years old to apply for a loan");
+  if (ageInYears(dob) < MIN_APPLICANT_AGE) {
+    throw badRequest(`Applicant must be at least ${MIN_APPLICANT_AGE} years old to apply for a loan`);
   }
 
   /*

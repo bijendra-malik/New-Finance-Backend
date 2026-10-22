@@ -9,8 +9,8 @@ const { adultApplicantCheck } = require("../loans/shared/personalDetails.rules")
 Franchise customer validators.
 
 Register: customer ki basic details. Ye fields loan application ka base hain,
-isliye fullName + mobile + PAN + DOB + email mandatory hain aur applicant adult
-hona chahiye (email se hi verify par loan account banta hai). Baaki
+isliye fullName + mobile + PAN + DOB + email mandatory hain aur applicant ki
+age kam se kam 21 years honi chahiye (email se hi verify par loan account banta hai). Baaki
 (state/city/pincode) optional hain.
 
 Update: saare fields optional, par jo bheji gayi value valid honi chahiye.

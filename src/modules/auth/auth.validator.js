@@ -1,6 +1,7 @@
 const { body } = require("express-validator");
 const handleValidationErrors = require("../../middleware/validation.middleware");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
+const { adultApplicantCheck } = require("../loans/shared/personalDetails.rules");
 
 /*
 ==========================================
@@ -48,7 +49,8 @@ const entryFieldRules = [
     .notEmpty()
     .withMessage("Date of birth is required")
     .isISO8601()
-    .withMessage("Enter a valid date of birth (YYYY-MM-DD)"),
+    .withMessage("Enter a valid date of birth (YYYY-MM-DD)")
+    .custom(adultApplicantCheck),
   body("panNumber")
     .trim()
     .toUpperCase()
