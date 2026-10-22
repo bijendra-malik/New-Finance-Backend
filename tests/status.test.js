@@ -118,6 +118,7 @@ describe("statusService (public status door)", () => {
 
   it("resolves only a registered customer account by mobile", async () => {
     await expect(findStatusCustomerByMobile("invalid")).rejects.toThrow("valid 10-digit mobile");
+    await expect(findStatusCustomerByMobile("0876543210")).rejects.toThrow("valid 10-digit mobile");
     expect(User.findOne).not.toHaveBeenCalled();
 
     User.findOne.mockResolvedValue({ ...account, customerId: undefined });

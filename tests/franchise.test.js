@@ -66,6 +66,19 @@ describe("franchise validators", () => {
     expect((await runChain(franchiseEntryValidator, { ...base, planCode: "3Y" })).passed).toBe(true);
     expect((await runChain(franchiseEntryValidator, { ...base, package: "Premium" })).passed).toBe(true);
   });
+
+  it("rejects a franchise entry mobile number that starts with zero", async () => {
+    const result = await runChain(franchiseEntryValidator, {
+      name: "Amit Verma",
+      email: "amit@example.com",
+      mobile: "0876543210",
+      dob: "1990-01-20",
+      panNumber: "ABCDE1234F",
+      planCode: "3Y",
+    });
+    expect(result.passed).toBe(false);
+    expect(result.statusCode).toBe(400);
+  });
 });
 
 describe("franchise middleware role guards", () => {

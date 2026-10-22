@@ -116,6 +116,12 @@ describe("personalLoanValidators.applyValidator", () => {
     const result = await runChain(applyValidator, { ...validPayload, loanAmount: "abc" });
     expect(result.passed).toBe(false);
   });
+
+  it("rejects a mobile number that starts with zero", async () => {
+    const result = await runChain(applyValidator, { ...validPayload, mobile: "0876543210" });
+    expect(result.passed).toBe(false);
+    expect(result.statusCode).toBe(400);
+  });
 });
 
 describe("homeLoanModel.professionalPayload", () => {

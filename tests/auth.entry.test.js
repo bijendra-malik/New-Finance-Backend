@@ -103,6 +103,20 @@ describe("customer auth entry for existing applications", () => {
     expect(hasRecentDirectApplication).not.toHaveBeenCalled();
     expect(sendOTP).toHaveBeenCalledWith("9876543210", expect.any(String));
   });
+
+  it("rejects entry mobile numbers that start with zero", async () => {
+    await expect(
+      startEntry({
+        role: USER_ROLE.CUSTOMER,
+        product: "projectLoan",
+        body: { ...entryBody, mobile: "0876501234" },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Enter a valid 10-digit mobile number",
+    });
+    expect(sendOTP).not.toHaveBeenCalled();
+  });
 });
 
 describe("verifyEntry", () => {
@@ -357,6 +371,14 @@ describe("customer login (phone OTP)", () => {
 
     await expect(startLogin({ mobile: "9876543210" })).rejects.toMatchObject({ statusCode: 404 });
     expect(sendOTP).not.toHaveBeenCalled();
+  });
+
+  it("rejects login mobile numbers that start with zero", async () => {
+    await expect(startLogin({ mobile: "0876501234" })).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Enter a valid 10-digit mobile number",
+    });
+    expect(User.findOne).not.toHaveBeenCalled();
   });
 
   it("sends a login-purpose OTP without touching entry OTPs", async () => {
