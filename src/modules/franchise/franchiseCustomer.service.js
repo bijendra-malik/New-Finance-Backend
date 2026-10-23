@@ -7,6 +7,7 @@ const { MODELS } = require("../loans/shared/loanModels");
 const { buildStatusView } = require("../customer/customer.service");
 const { applyCreditScore } = require("../customer/credit.service");
 const entryService = require("../auth/entry.service");
+const franchiseService = require("./franchise.service");
 const { USER_ROLE } = require("../../constants/roles");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
@@ -207,20 +208,42 @@ const resendCustomerOtp = async (franchise, body = {}) => {
 };
 
 /** Franchise submits a credit score for its own OTP-verified customer. */
-const submitCustomerCreditScore = async (franchise, id, rawScore) => {
+const submitCustomerCreditScore = async (franchise, id, draftId, rawScore) => {
   const franchiseCustomer = await getCustomerDoc(franchise, id);
 
   if (!franchiseCustomer.isVerified) {
     throw forbidden("Verify this customer's mobile before submitting a credit score.");
   }
 
+  const draft = await franchiseService.requireActiveFranchiseCustomerLoanDraft(
+    franchise,
+    franchiseCustomer,
+    draftId
+  );
   const account = await User.findOne({ mobile: franchiseCustomer.mobile, role: USER_ROLE.CUSTOMER });
   if (!account) throw notFound("Customer account not found. Verify the customer's mobile first.");
 
   const result = applyCreditScore(account, rawScore);
   await account.save();
 
-  return result;
+  if (!result.eligible) {
+    return { ...result, product: draft.product, nextStep: "credit-score", draftRetained: true };
+  }
+
+  const finalized = await franchiseService.finalizeFranchiseCustomerLoanDraft(
+    franchise,
+    franchiseCustomer,
+    draft,
+    account
+  );
+
+  return {
+    ...result,
+    message: "You are eligible. Your loan application has been submitted successfully.",
+    product: finalized.product,
+    nextStep: "complete",
+    application: finalized.application,
+  };
 };
 
 /* --------------------------------------------------------------- read -- */

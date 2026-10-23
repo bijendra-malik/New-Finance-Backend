@@ -12,8 +12,9 @@ Franchise customer controllers (approved franchise only).
   GET    /api/franchise/customer/:id/loans          us customer ke saare loans + status
   GET    /api/franchise/customer/:id/loans/:applicationNo   ek loan ka status/timeline
 
-Loan apply bhi isi router me hai (`/:product/applyloan`), par uska handler
-franchise.controller.js me hai — product wahan validate + save hota hai.
+Loan apply isi router me hai (`/:product/applyloan`), par uska handler
+franchise.controller.js me hai — form pehle draft banta hai, credit-score par
+eligible hone ke baad actual loan save hota hai.
 ==========================================
 */
 
@@ -73,6 +74,7 @@ exports.submitCustomerCreditScore = async (req, res, next) => {
     const result = await service.submitCustomerCreditScore(
       req.franchise,
       req.params.id,
+      req.body.draftId,
       req.body.creditScore
     );
 

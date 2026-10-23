@@ -12,7 +12,7 @@ hoti hai. Form inhe dobara nahi bhejta — isliye validation se PEHLE profile ki
 values body me bhar di jaati hain, warna product ke personal-detail rules
 "Full name is required" jaisa 400 de dete hain.
 
-Service (`franchise.service.js` -> `createFranchiseLoan`) bhi yahi values profile
+Service (`franchise.service.js` -> `createFranchiseLoanDraft`) bhi yahi values profile
 se leti hai, isliye yahan client ki bheji identity overwrite hona hi sahi hai.
 
 Address (state / city / pincode) form ki value pehle rakhta hai aur khaali hone

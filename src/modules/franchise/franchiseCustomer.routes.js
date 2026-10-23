@@ -26,11 +26,11 @@ Franchise customer API — mounted at /api/franchise/customer
   POST   /register                     naya customer register karo (OTP customer
                                        ke phone par jaata hai)
   POST   /verify-otp                   customer mobile + OTP -> CUST id banti hai
-  POST   /:id/credit-score             verified customer ka score submit/check
   POST   /:product/applyloan           usi customer ke liye loan apply karo
                                        e.g. /customer/personal/applyloan
                                             /customer/gold-loan/applyloan
                                        (customer id body me `franchiseCustomerId`)
+  POST   /:id/credit-score             eligible score par pending loan finalize
 
   GET    /                             apne customers (search + pagination)
   GET    /:id                          ek customer ki poori detail
@@ -38,11 +38,12 @@ Franchise customer API — mounted at /api/franchise/customer
   GET    /:id/loans                    us customer ke saare loans + status/timeline
   GET    /:id/loans/:applicationNo     ek loan ka status (LOAN000001)
 
-Flow seedha hai — teen step, aur beech me customer ka OTP:
+Flow seedha hai:
 
   1. POST /register          customer ki details save + uske phone par OTP
   2. POST /verify-otp        mobile + OTP match -> customer ka `users` account + CUST id
-  3. POST /:product/applyloan loan apply (customer verified hona zaroori hai)
+  3. POST /:product/applyloan loan form draft (customer verified hona zaroori hai)
+  4. POST /:id/credit-score  eligible score par actual loan application submit
 
 Loan apply product ko URL se leta hai; `productFromParam` us segment ko
 LOAN_PRODUCTS key me badal kar body par pin kar deta hai, isliye usi product ke
