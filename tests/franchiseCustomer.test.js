@@ -10,6 +10,11 @@ jest.mock("../src/modules/franchise/franchise.model", () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
 }));
+jest.mock("../src/modules/franchise/franchiseCustomerLoanDraft.model", () => ({
+  findOneAndUpdate: jest.fn(),
+  findOne: jest.fn(),
+  deleteOne: jest.fn(),
+}));
 jest.mock("../src/modules/auth/user.model", () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
@@ -24,12 +29,17 @@ jest.mock("../src/modules/auth/otp.model", () => ({
   create: jest.fn().mockResolvedValue({}),
   deleteMany: jest.fn().mockResolvedValue({}),
 }));
+jest.mock("../src/utils/sequence", () => ({
+  nextLoanApplicationNo: jest.fn().mockResolvedValue("LOAN000009"),
+  nextCustomerId: jest.fn().mockResolvedValue("CUST000001"),
+}));
 jest.mock("../src/utils/sendOTP", () => jest.fn(async () => true));
 
 const mongoose = require("mongoose");
 
 const FranchiseCustomer = require("../src/modules/franchise/franchiseCustomer.model");
 const Franchise = require("../src/modules/franchise/franchise.model");
+const FranchiseCustomerLoanDraft = require("../src/modules/franchise/franchiseCustomerLoanDraft.model");
 const User = require("../src/modules/auth/user.model");
 const OTP = require("../src/modules/auth/otp.model");
 const sendOTP = require("../src/utils/sendOTP");
@@ -317,32 +327,127 @@ describe("franchise loan apply", () => {
 
   it("requires the franchise customer id", async () => {
     await expect(
-      franchiseService.createFranchiseLoan(FRANCHISE, { product: "personal", loanAmount: 300000, loanTenure: 2 })
+      franchiseService.createFranchiseLoanDraft(FRANCHISE, { product: "personal", loanAmount: 300000, loanTenure: 2 })
     ).rejects.toThrow(/franchiseCustomerId is required/i);
   });
 
-  it("applies the loan straight away, stamping the franchise customer + FRN", async () => {
+  it("saves the verified customer's loan form as a draft before credit-score submission", async () => {
     FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     User.findOne.mockResolvedValue({ _id: "customer-account-id", mobile: "9876543210", role: USER_ROLE.CUSTOMER });
+    const createSpy = jest.spyOn(MODELS.personal, "create");
+    FranchiseCustomerLoanDraft.findOneAndUpdate.mockResolvedValue({
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      expiresAt: new Date("2026-10-24T00:00:00.000Z"),
+    });
 
+    const result = await franchiseService.createFranchiseLoanDraft(FRANCHISE, payroll());
+
+    expect(FranchiseCustomerLoanDraft.findOneAndUpdate).toHaveBeenCalledWith(
+      { franchiseCustomer: FC_ID },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          franchise: FRANCHISE._id,
+          product: "personal",
+          payload: expect.objectContaining({
+            fullName: "Rahul Sharma",
+            mobile: "9876543210",
+            panNumber: "ABCDE1234F",
+            dob: "1995-05-15",
+          }),
+          expiresAt: expect.any(Date),
+        }),
+      }),
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      product: "personal",
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      franchiseCustomer: { _id: FC_ID },
+    });
+  });
+
+  it("creates the loan only after an eligible score is submitted for the active draft", async () => {
+    const customer = franchiseCustomerDoc({ isVerified: true });
+    const account = {
+      _id: "customer-account-id",
+      mobile: customer.mobile,
+      role: USER_ROLE.CUSTOMER,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const draft = {
+      _id: "draft-record-id",
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      product: "personal",
+      payload: payroll(),
+    };
+    FranchiseCustomer.findOne.mockResolvedValue(customer);
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
+    FranchiseCustomerLoanDraft.deleteOne.mockResolvedValue({ deletedCount: 1 });
+    User.findOne.mockResolvedValue(account);
     const createSpy = jest.spyOn(MODELS.personal, "create").mockResolvedValue({
       toObject: () => ({ _id: "loan-id", applicationNo: "LOAN000009", status: "Submitted" }),
     });
 
-    const result = await franchiseService.createFranchiseLoan(FRANCHISE, payroll());
+    const result = await customerService.submitCustomerCreditScore(
+      FRANCHISE,
+      FC_ID,
+      draft.draftId,
+      720
+    );
 
-    const document = createSpy.mock.calls[0][0];
-    expect(document.user).toBe("customer-account-id");
-    expect(document.franchise).toBe("frn-id");
-    expect(document.franchiseCode).toBe("FRN000001");
-    expect(document.franchiseCustomer).toBe(FC_ID);
-    // Applicant details customer profile se aate hain, body se nahi.
-    expect(document.fullName).toBe("Rahul Sharma");
-    expect(document.mobile).toBe("9876543210");
-    expect(document.panNumber).toBe("ABCDE1234F");
-    expect(document.dob).toBe("1995-05-15");
+    expect(FranchiseCustomerLoanDraft.findOne).toHaveBeenCalledWith({
+      franchise: FRANCHISE._id,
+      franchiseCustomer: FC_ID,
+      draftId: draft.draftId,
+      expiresAt: { $gt: expect.any(Date) },
+    });
+    expect(account.save).toHaveBeenCalled();
+    expect(createSpy.mock.calls[0][0]).toMatchObject({
+      user: "customer-account-id",
+      franchise: FRANCHISE._id,
+      franchiseCode: FRANCHISE.franchiseId,
+      franchiseCustomer: FC_ID,
+      creditScore: 720,
+    });
+    expect(FranchiseCustomerLoanDraft.deleteOne).toHaveBeenCalled();
+    expect(result).toMatchObject({ eligible: true, product: "personal", nextStep: "complete" });
+    expect(result.application.applicationNo).toBe("LOAN000009");
+  });
 
-    expect(result).not.toHaveProperty("cibil");
-    expect(result.franchiseCustomer._id).toBe(FC_ID);
+  it("retains the draft and does not create a loan when the score is below eligibility", async () => {
+    const customer = franchiseCustomerDoc({ isVerified: true });
+    const account = {
+      _id: "customer-account-id",
+      mobile: customer.mobile,
+      role: USER_ROLE.CUSTOMER,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const draft = {
+      _id: "draft-record-id",
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      product: "personal",
+      payload: payroll(),
+    };
+    FranchiseCustomer.findOne.mockResolvedValue(customer);
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
+    User.findOne.mockResolvedValue(account);
+    const createSpy = jest.spyOn(MODELS.personal, "create");
+
+    const result = await customerService.submitCustomerCreditScore(
+      FRANCHISE,
+      FC_ID,
+      draft.draftId,
+      550
+    );
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(FranchiseCustomerLoanDraft.deleteOne).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      eligible: false,
+      product: "personal",
+      nextStep: "credit-score",
+      draftRetained: true,
+    });
   });
 });

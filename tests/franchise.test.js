@@ -1,6 +1,7 @@
 const {
   franchiseLoginValidator,
   franchiseEntryValidator,
+  franchiseCustomerCreditScoreValidator,
 } = require("../src/modules/franchise/franchise.validator");
 const {
   requireCustomer,
@@ -42,6 +43,20 @@ const runChain = (chain, body) => {
 
 
 describe("franchise validators", () => {
+  it("requires a valid pending-draft ID with a credit score", async () => {
+    expect(
+      (await runChain(franchiseCustomerCreditScoreValidator, { creditScore: 720 })).passed
+    ).toBe(false);
+    expect(
+      (
+        await runChain(franchiseCustomerCreditScoreValidator, {
+          draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+          creditScore: 720,
+        })
+      ).passed
+    ).toBe(true);
+  });
+
   it("login requires franchiseId + password", async () => {
     expect((await runChain(franchiseLoginValidator, { franchiseId: "FRN000125" })).passed).toBe(false);
     expect(
