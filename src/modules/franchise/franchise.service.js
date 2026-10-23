@@ -1,9 +1,11 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { randomUUID } = require("crypto");
 
 const User = require("../auth/user.model");
 const Franchise = require("./franchise.model");
 const FranchiseCustomer = require("./franchiseCustomer.model");
+const FranchiseCustomerLoanDraft = require("./franchiseCustomerLoanDraft.model");
 const generateToken = require("../../utils/generateToken");
 const { nextLoanApplicationNo, nextCustomerId } = require("../../utils/sequence");
 const { MODELS } = require("../loans/shared/loanModels");
@@ -12,6 +14,8 @@ const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loa
 const { assertLoanEligibility, creditSnapshot } = require("../customer/credit.service");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
+
+const FRANCHISE_CUSTOMER_DRAFT_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /*
 ==========================================
@@ -23,10 +27,9 @@ engine auth/entry.service.js me hai). Alag "apply" step nahi hai.
 Everything franchise-specific happens here:
 
   1. loginFranchise()      -> FRN code + password -> JWT
-  2. createFranchiseLoan() -> approved franchise applies for its OWN customer
-                             (customer register/read ka kaam
-                              franchiseCustomer.service.js me hai)
-  4. listFranchiseLoans()  -> all loans submitted through this FRN, grouped
+  2. createFranchiseLoanDraft() -> approved franchise saves its customer's form
+  3. finalizeFranchiseCustomerLoanDraft() -> eligible score submits the loan
+  4. listFranchiseLoans()        -> all loans submitted through this FRN, grouped
 
 The admin actions (approve / reject, which mint the FRN code) live in
 modules/admin/franchise.service.js.
@@ -104,11 +107,6 @@ const loginFranchise = async (franchiseId, password) => {
 
 /**
  * Franchise ka apna customer (franchisecustomers collection) — franchise-scoped.
- *
- * Loan apply ka pehla requirement yahi doc hai: pehle
- * POST /api/franchise/customer/register se customer banao, phir
- * POST /api/franchise/customer/verify-otp se uska mobile verify karo, aur tab
- * uski `_id` `franchiseCustomerId` ke roop me bhejo.
  */
 const loadFranchiseCustomer = async (franchise, rawId) => {
   const id = cleanText(rawId);
@@ -208,7 +206,7 @@ Product-specific fields (loanAmount, employmentType, companyName ...) normal
 apply payload ki tarah bheje jaate hain; validation route par usi product ke
 rules se hoti hai.
 */
-const createFranchiseLoan = async (franchise, body = {}) => {
+const createFranchiseLoanDraft = async (franchise, body = {}) => {
   const payload = unwrap(body);
 
   const product = cleanText(payload.product);
@@ -229,23 +227,68 @@ const createFranchiseLoan = async (franchise, body = {}) => {
   }
 
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
-  const customer = await resolveCustomerAccount(franchiseCustomer, applicant.email);
+  await resolveCustomerAccount(franchiseCustomer, applicant.email);
+  const draft = await FranchiseCustomerLoanDraft.findOneAndUpdate(
+    { franchiseCustomer: franchiseCustomer._id },
+    {
+      $set: {
+        franchise: franchise._id,
+        draftId: randomUUID(),
+        product,
+        payload: { ...payload, ...applicant },
+        expiresAt: new Date(Date.now() + FRANCHISE_CUSTOMER_DRAFT_RETENTION_MS),
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
 
-  // Franchise applications use the same 600+ score and 24-hour eligibility gate
-  // as direct applications, and persist the customer's current score snapshot.
+  return {
+    draftId: draft.draftId,
+    expiresAt: draft.expiresAt,
+    product,
+    franchiseCustomer,
+  };
+};
+
+const requireActiveFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draftId) => {
+  const draft = await FranchiseCustomerLoanDraft.findOne({
+    franchise: franchise._id,
+    franchiseCustomer: franchiseCustomer._id,
+    draftId,
+    expiresAt: { $gt: new Date() },
+  });
+
+  if (!draft) {
+    const error = new Error("Loan form draft was not found or has expired. Please submit the loan form again.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  return draft;
+};
+
+const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draft, customer) => {
+  const product = cleanText(draft.product);
+  if (!LOAN_PRODUCTS[product] || !MODELS[product]) throw badRequest("A valid loan product is required");
+
   assertLoanEligibility(customer);
 
   const applicationNo = await nextLoanApplicationNo();
-
-  const document = buildLoanDocument(product, { ...payload, ...applicant }, customer._id, {
+  const applicant = applicantFromCustomer(franchiseCustomer, draft.payload);
+  const document = buildLoanDocument(product, { ...draft.payload, ...applicant }, customer._id, {
     franchise: franchise._id,
     franchiseCode: franchise.franchiseId,
     franchiseCustomer: franchiseCustomer._id,
     applicationNo,
     credit: creditSnapshot(customer),
   });
-
   const application = await MODELS[product].create(document);
+  await FranchiseCustomerLoanDraft.deleteOne({
+    _id: draft._id,
+    franchise: franchise._id,
+    franchiseCustomer: franchiseCustomer._id,
+    draftId: draft.draftId,
+  });
 
   return {
     application: sanitizeLoanResponse(product, application),
@@ -279,6 +322,8 @@ const listFranchiseLoans = async (franchise) => {
 
 module.exports = {
   loginFranchise,
-  createFranchiseLoan,
+  createFranchiseLoanDraft,
+  requireActiveFranchiseCustomerLoanDraft,
+  finalizeFranchiseCustomerLoanDraft,
   listFranchiseLoans,
 };

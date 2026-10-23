@@ -191,16 +191,16 @@ customer ke profile se aate hain — form inhe dobara nahi bhejta.
 */
 exports.loanApply = async (req, res, next) => {
   try {
-    const { application, product, customer, franchiseCustomer } =
-      await franchiseService.createFranchiseLoan(req.franchise, req.body);
+    const { draftId, expiresAt, product, franchiseCustomer } =
+      await franchiseService.createFranchiseLoanDraft(req.franchise, req.body);
 
-    res.status(201).json({
+    res.status(202).json({
       success: true,
+      message: "Loan form saved temporarily. Submit the customer's credit score to complete the application.",
       product,
-      customerId: customer._id,
-      franchiseId: req.franchise.franchiseId,
+      nextStep: "credit-score",
       franchiseCustomerId: franchiseCustomer._id,
-      data: application,
+      draft: { draftId, expiresAt },
     });
   } catch (error) {
     next(error);

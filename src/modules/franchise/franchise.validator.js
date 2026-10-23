@@ -97,6 +97,13 @@ const franchiseCustomerOtpValidator = [
 ];
 
 const franchiseCustomerCreditScoreValidator = [
+  body("draftId")
+    .trim()
+    .notEmpty()
+    .withMessage("Loan form draft ID is required")
+    .bail()
+    .isUUID()
+    .withMessage("Enter a valid loan form draft ID"),
   body("creditScore")
     .exists({ checkNull: true })
     .withMessage("Credit score is required")
