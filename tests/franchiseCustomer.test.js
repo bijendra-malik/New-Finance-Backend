@@ -11,7 +11,8 @@ jest.mock("../src/modules/franchise/franchise.model", () => ({
   findById: jest.fn(),
 }));
 jest.mock("../src/modules/franchise/franchiseCustomerLoanDraft.model", () => ({
-  findOneAndUpdate: jest.fn(),
+  ensureExpiryIndex: jest.fn().mockResolvedValue(undefined),
+  create: jest.fn(),
   findOne: jest.fn(),
   deleteOne: jest.fn(),
 }));
@@ -334,37 +335,56 @@ describe("franchise loan apply", () => {
   it("saves the verified customer's loan form as a draft before credit-score submission", async () => {
     FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     User.findOne.mockResolvedValue({ _id: "customer-account-id", mobile: "9876543210", role: USER_ROLE.CUSTOMER });
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue(null);
     const createSpy = jest.spyOn(MODELS.personal, "create");
-    FranchiseCustomerLoanDraft.findOneAndUpdate.mockResolvedValue({
+    FranchiseCustomerLoanDraft.create.mockResolvedValue({
+      _id: "draft-record-id",
       draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
-      expiresAt: new Date("2026-10-24T00:00:00.000Z"),
+      createdAt: new Date("2026-10-23T00:00:00.000Z"),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
     const result = await franchiseService.createFranchiseLoanDraft(FRANCHISE, payroll());
 
-    expect(FranchiseCustomerLoanDraft.findOneAndUpdate).toHaveBeenCalledWith(
-      { franchiseCustomer: FC_ID },
+    expect(FranchiseCustomerLoanDraft.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        $set: expect.objectContaining({
-          franchise: FRANCHISE._id,
-          product: "personal",
-          payload: expect.objectContaining({
-            fullName: "Rahul Sharma",
-            mobile: "9876543210",
-            panNumber: "ABCDE1234F",
-            dob: "1995-05-15",
-          }),
-          expiresAt: expect.any(Date),
+        franchise: FRANCHISE._id,
+        franchiseCustomer: FC_ID,
+        draftId: expect.any(String),
+        product: "personal",
+        expiresAt: expect.any(Date),
+        payload: expect.objectContaining({
+          fullName: "Rahul Sharma",
+          mobile: "9876543210",
+          panNumber: "ABCDE1234F",
+          dob: "1995-05-15",
         }),
-      }),
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      })
     );
     expect(createSpy).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       product: "personal",
       draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      createdAt: new Date("2026-10-23T00:00:00.000Z"),
+      expiresAt: expect.any(Date),
       franchiseCustomer: { _id: FC_ID },
     });
+  });
+
+  it("does not replace an existing customer draft when another application is started", async () => {
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
+    User.findOne.mockResolvedValue({ _id: "customer-account-id", mobile: "9876543210", role: USER_ROLE.CUSTOMER });
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue({
+      draftId: "existing-draft-id",
+      product: "business",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    await expect(franchiseService.createFranchiseLoanDraft(FRANCHISE, payroll())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringMatching(/resume or cancel/i),
+    });
+    expect(FranchiseCustomerLoanDraft.create).not.toHaveBeenCalled();
   });
 
   it("creates the loan only after an eligible score is submitted for the active draft", async () => {
@@ -380,6 +400,7 @@ describe("franchise loan apply", () => {
       draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
       product: "personal",
       payload: payroll(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     };
     FranchiseCustomer.findOne.mockResolvedValue(customer);
     FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
@@ -428,6 +449,7 @@ describe("franchise loan apply", () => {
       draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
       product: "personal",
       payload: payroll(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     };
     FranchiseCustomer.findOne.mockResolvedValue(customer);
     FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
@@ -449,5 +471,66 @@ describe("franchise loan apply", () => {
       nextStep: "credit-score",
       draftRetained: true,
     });
+  });
+
+  it("returns a pending draft for resume and cancels it only for its franchise customer", async () => {
+    const customer = franchiseCustomerDoc({ isVerified: true });
+    const draft = {
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      product: "business",
+      payload: { loanAmount: 2500000 },
+      createdAt: new Date("2026-10-20T00:00:00.000Z"),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    };
+    FranchiseCustomer.findOne.mockResolvedValue(customer);
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
+    FranchiseCustomerLoanDraft.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+    const resumed = await customerService.getCustomerLoanDraft(FRANCHISE, FC_ID);
+    expect(resumed).toMatchObject({
+      hasPendingDraft: true,
+      nextStep: "credit-score",
+      draft: {
+        draftId: draft.draftId,
+        product: "business",
+        data: draft.payload,
+        expiresAt: draft.expiresAt,
+      },
+    });
+
+    const cancelled = await customerService.cancelCustomerLoanDraft(FRANCHISE, FC_ID);
+    expect(FranchiseCustomerLoanDraft.deleteOne).toHaveBeenCalledWith({
+      franchise: FRANCHISE._id,
+      franchiseCustomer: FC_ID,
+    });
+    expect(cancelled.franchiseCustomerId).toBe(FC_ID);
+  });
+
+  it("expires an old draft after 24 hours so the customer can fill the form again without OTP", async () => {
+    const customer = franchiseCustomerDoc({ isVerified: true });
+    FranchiseCustomer.findOne.mockResolvedValue(customer);
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue({
+      _id: "expired-draft",
+      draftId: "expired-draft-id",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    FranchiseCustomerLoanDraft.deleteOne.mockResolvedValue({ deletedCount: 1 });
+    const account = {
+      _id: "customer-account-id",
+      mobile: customer.mobile,
+      role: USER_ROLE.CUSTOMER,
+    };
+    User.findOne.mockResolvedValue(account);
+
+    const result = await customerService.getCustomerLoanDraft(FRANCHISE, FC_ID);
+
+    expect(result).toMatchObject({ hasPendingDraft: false, nextStep: "loan-apply", draft: null });
+    expect(FranchiseCustomerLoanDraft.deleteOne).toHaveBeenCalledWith({
+      _id: "expired-draft",
+      franchise: FRANCHISE._id,
+      franchiseCustomer: FC_ID,
+    });
+    expect(customer.isVerified).toBe(true);
   });
 });
