@@ -150,6 +150,26 @@ const getActiveCustomerLoanDraft = async (customerId, draftId = null, product = 
   return CustomerLoanDraft.findOne(filter);
 };
 
+const getCustomerLoanDraft = async (customerId) => {
+  const draft = await getActiveCustomerLoanDraft(customerId);
+  if (!draft) {
+    return { hasPendingDraft: false, nextStep: "loan-apply", draft: null };
+  }
+
+  return {
+    hasPendingDraft: true,
+    nextStep: "credit-score",
+    draft: {
+      draftId: draft.draftId,
+      product: draft.product,
+      data: draft.payload,
+      createdAt: draft.createdAt,
+      expiresAt: draft.expiresAt,
+      updatedAt: draft.updatedAt,
+    },
+  };
+};
+
 const requireActiveCustomerLoanDraft = async (customerId, draftId) => {
   const draft = await getActiveCustomerLoanDraft(customerId, draftId);
   if (!draft) {
@@ -158,6 +178,21 @@ const requireActiveCustomerLoanDraft = async (customerId, draftId) => {
     throw error;
   }
   return draft;
+};
+
+const cancelCustomerLoanDraft = async (customerId, draftId) => {
+  const result = await CustomerLoanDraft.deleteOne({
+    user: customerId,
+    draftId,
+    expiresAt: { $gt: new Date() },
+  });
+  if (result.deletedCount === 0) {
+    const error = new Error("Loan form draft was not found. It may already be completed, cancelled, or expired.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return { draftId, cancelled: true };
 };
 
 const finalizeCustomerLoanDraft = async (customerId, draftId, customer) => {
@@ -335,7 +370,9 @@ module.exports = {
   getLoanApplyScreen,
   createCustomerLoanDraft,
   getActiveCustomerLoanDraft,
+  getCustomerLoanDraft,
   requireActiveCustomerLoanDraft,
+  cancelCustomerLoanDraft,
   finalizeCustomerLoanDraft,
   getCustomerProductApplication,
   listCustomerLoans,

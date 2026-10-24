@@ -43,4 +43,20 @@ const creditScoreValidator = [
   handleValidationErrors,
 ];
 
-module.exports = { customerLoanApplyValidator, creditScoreValidator, handleValidationErrors };
+const cancelCustomerLoanDraftValidator = [
+  body("draftId")
+    .trim()
+    .notEmpty()
+    .withMessage("Loan form draft ID is required")
+    .bail()
+    .isUUID()
+    .withMessage("Enter a valid loan form draft ID"),
+  handleValidationErrors,
+];
+
+module.exports = {
+  customerLoanApplyValidator,
+  creditScoreValidator,
+  cancelCustomerLoanDraftValidator,
+  handleValidationErrors,
+};
