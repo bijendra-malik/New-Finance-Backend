@@ -83,6 +83,43 @@ describe("productApplyValidator (unified customer + franchise entry points)", ()
     expect(result.payload.success).toBe(false);
   });
 
+  it("accepts ages 18 and 65 and rejects applicants outside that range", async () => {
+    const runWithAge = (years) => {
+      const dob = new Date();
+      dob.setFullYear(dob.getFullYear() - years);
+      return runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
+        ...validPersonal,
+        dob: dob.toISOString().slice(0, 10),
+      });
+    };
+
+    const under18Dob = new Date();
+    under18Dob.setFullYear(under18Dob.getFullYear() - 17);
+    const tooYoung = await runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
+      ...validPersonal,
+      dob: under18Dob.toISOString().slice(0, 10),
+    });
+    expect(tooYoung.next).toBe(false);
+    expect(tooYoung.statusCode).toBe(400);
+    expect(tooYoung.payload.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: "Applicant must be between 18 and 65 years old" }),
+      ])
+    );
+
+    const tooOld = await runWithAge(66);
+    expect(tooOld.next).toBe(false);
+    expect(tooOld.statusCode).toBe(400);
+    expect(tooOld.payload.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: "Applicant must be between 18 and 65 years old" }),
+      ])
+    );
+
+    expect((await runWithAge(18)).next).toBe(true);
+    expect((await runWithAge(65)).next).toBe(true);
+  });
+
   it("franchise validator uses the same dispatcher", async () => {
     const result = await runPipeline([normalizeApplyPayload, franchiseLoanApplyValidator], validPersonal);
     expect(result.next).toBe(true);

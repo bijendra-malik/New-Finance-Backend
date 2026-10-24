@@ -10,7 +10,7 @@ Franchise customer validators.
 
 Register: customer ki basic details. Ye fields loan application ka base hain,
 isliye fullName + mobile + PAN + DOB + email mandatory hain aur applicant ki
-age kam se kam 21 years honi chahiye (email se hi verify par loan account banta hai). Baaki
+age 18 se 65 years ke beech honi chahiye (email se hi verify par loan account banta hai). Baaki
 (state/city/pincode) optional hain.
 
 Update: saare fields optional, par jo bheji gayi value valid honi chahiye.
@@ -61,7 +61,11 @@ const franchiseCustomerUpdateValidator = [
     .toUpperCase()
     .matches(PAN_PATTERN)
     .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
-  body("dob").optional({ values: "falsy" }).isISO8601().withMessage("Enter a valid date of birth"),
+  body("dob")
+    .optional({ values: "falsy" })
+    .isISO8601()
+    .withMessage("Enter a valid date of birth")
+    .custom(adultApplicantCheck),
   body("email").optional({ values: "falsy" }).trim().isEmail().withMessage("Enter a valid email address"),
   body("pincode")
     .optional({ values: "falsy" })

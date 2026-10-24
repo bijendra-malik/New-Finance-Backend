@@ -9,7 +9,10 @@ const { freshOtp, maskMobile } = require("../../utils/otp");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { MODELS } = require("../loans/shared/loanModels");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
-const { MIN_APPLICANT_AGE } = require("../loans/shared/personalDetails.rules");
+const {
+  MIN_APPLICANT_AGE,
+  MAX_APPLICANT_AGE,
+} = require("../loans/shared/personalDetails.rules");
 const {
   hasRecentDirectApplication,
   createApplicationCooldownError,
@@ -131,8 +134,11 @@ const buildPendingDetails = (body = {}) => {
   if (!dob || Number.isNaN(dob.getTime())) {
     throw badRequest("Enter a valid date of birth (YYYY-MM-DD)");
   }
-  if (ageInYears(dob) < MIN_APPLICANT_AGE) {
-    throw badRequest(`Applicant must be at least ${MIN_APPLICANT_AGE} years old to apply for a loan`);
+  const applicantAge = ageInYears(dob);
+  if (applicantAge < MIN_APPLICANT_AGE || applicantAge > MAX_APPLICANT_AGE) {
+    throw badRequest(
+      `Applicant must be between ${MIN_APPLICANT_AGE} and ${MAX_APPLICANT_AGE} years old to apply for a loan`
+    );
   }
 
   /*

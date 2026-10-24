@@ -6,28 +6,30 @@ const { PAN_PATTERN, MOBILE_PATTERN, PINCODE_PATTERN } = require("./helpers");
  * =========================================================================
  * fullName and mobile are ALWAYS required.
  * The rest become required only when config.personalDetailsRequired is true.
- * Applicant date of birth must indicate an age of at least 21 years.
+ * Applicant date of birth must indicate an age between 18 and 65 years.
  * ========================================================================= */
 
-const MIN_APPLICANT_AGE = 21;
+const MIN_APPLICANT_AGE = 18;
+const MAX_APPLICANT_AGE = 65;
 
-/** The applicant must be at least 21 years old, and the DOB cannot be in the future. */
+/** The applicant must be 18–65 years old, and the DOB cannot be in the future. */
 const adultApplicantCheck = (value) => {
   const dob = new Date(value);
   const today = new Date();
-  dob.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
 
   if (Number.isNaN(dob.getTime())) throw new Error("Enter a valid date of birth");
-  if (dob > today) throw new Error("Date of birth cannot be in the future");
 
-  const minimumDateOfBirth = new Date(
-    today.getFullYear() - MIN_APPLICANT_AGE,
-    today.getMonth(),
-    today.getDate()
-  );
-  if (dob > minimumDateOfBirth) {
-    throw new Error(`Applicant must be at least ${MIN_APPLICANT_AGE} years old`);
+  const birthYear = dob.getUTCFullYear();
+  const birthMonth = dob.getUTCMonth();
+  const birthDay = dob.getUTCDate();
+  const currentYear = today.getUTCFullYear();
+  const currentMonth = today.getUTCMonth();
+  const currentDay = today.getUTCDate();
+  let age = currentYear - birthYear;
+  if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) age -= 1;
+
+  if (age < MIN_APPLICANT_AGE || age > MAX_APPLICANT_AGE) {
+    throw new Error(`Applicant must be between ${MIN_APPLICANT_AGE} and ${MAX_APPLICANT_AGE} years old`);
   }
 
   return true;
@@ -64,4 +66,9 @@ const personalDetailsRules = (config) => {
   return chain;
 };
 
-module.exports = { personalDetailsRules, adultApplicantCheck, MIN_APPLICANT_AGE };
+module.exports = {
+  personalDetailsRules,
+  adultApplicantCheck,
+  MIN_APPLICANT_AGE,
+  MAX_APPLICANT_AGE,
+};
