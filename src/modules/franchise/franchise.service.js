@@ -11,7 +11,8 @@ const { nextLoanApplicationNo, nextCustomerId } = require("../../utils/sequence"
 const { MODELS } = require("../loans/shared/loanModels");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
-const { assertLoanEligibility, creditSnapshot } = require("../customer/credit.service");
+const { creditSnapshot } = require("../customer/credit.service");
+const { assertLoanApplicationEligibility } = require("../loans/shared/loanEligibility");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
@@ -325,7 +326,8 @@ const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, 
   const product = cleanText(draft.product);
   if (!LOAN_PRODUCTS[product] || !MODELS[product]) throw badRequest("A valid loan product is required");
 
-  assertLoanEligibility(customer);
+  // Final submit gate: company-type policy + credit score (600+ + window).
+  assertLoanApplicationEligibility(product, draft.payload, customer);
 
   const applicationNo = await nextLoanApplicationNo();
   const applicant = applicantFromCustomer(franchiseCustomer, draft.payload);
