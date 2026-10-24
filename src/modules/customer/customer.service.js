@@ -5,7 +5,8 @@ const { nextLoanApplicationNo } = require("../../utils/sequence");
 const User = require("../auth/user.model");
 const CustomerLoanDraft = require("./customerLoanDraft.model");
 const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
-const { assertLoanEligibility, creditSnapshot } = require("./credit.service");
+const { creditSnapshot } = require("./credit.service");
+const { assertLoanApplicationEligibility } = require("../loans/shared/loanEligibility");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const {
@@ -199,7 +200,8 @@ const finalizeCustomerLoanDraft = async (customerId, draftId, customer) => {
   const draft = await requireActiveCustomerLoanDraft(customerId, draftId);
   const product = resolveProduct({ product: draft.product });
 
-  assertLoanEligibility(customer);
+  // Final submit gate: company-type policy + credit score (600+ + window).
+  assertLoanApplicationEligibility(product, draft.payload, customer);
   await assertNoExistingDirectApplication(MODELS[product], customerId);
 
   const applicationNo = await nextLoanApplicationNo();
