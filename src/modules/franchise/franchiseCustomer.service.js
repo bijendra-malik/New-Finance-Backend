@@ -246,6 +246,37 @@ const submitCustomerCreditScore = async (franchise, id, draftId, rawScore) => {
   };
 };
 
+const getCustomerLoanDraft = async (franchise, id) => {
+  const customer = await getCustomerDoc(franchise, id);
+  if (!customer.isVerified) throw forbidden("Verify this customer's mobile before continuing.");
+
+  const draft = await franchiseService.getFranchiseCustomerLoanDraft(franchise, customer);
+  if (!draft) {
+    return { hasPendingDraft: false, nextStep: "loan-apply", draft: null };
+  }
+
+  return {
+    hasPendingDraft: true,
+    nextStep: "credit-score",
+    draft: {
+      draftId: draft.draftId,
+      product: draft.product,
+      data: draft.payload,
+      createdAt: draft.createdAt,
+      expiresAt: draft.expiresAt,
+      updatedAt: draft.updatedAt,
+    },
+  };
+};
+
+const cancelCustomerLoanDraft = async (franchise, id) => {
+  const customer = await getCustomerDoc(franchise, id);
+  const cancelled = await franchiseService.cancelFranchiseCustomerLoanDraft(franchise, customer);
+  if (!cancelled) throw notFound("No pending loan draft was found for this customer.");
+
+  return { franchiseCustomerId: customer._id };
+};
+
 /* --------------------------------------------------------------- read -- */
 
 const getCustomerDoc = async (franchise, id) => {
@@ -433,6 +464,8 @@ module.exports = {
   verifyCustomerOtp,
   resendCustomerOtp,
   submitCustomerCreditScore,
+  getCustomerLoanDraft,
+  cancelCustomerLoanDraft,
   listCustomers,
   getCustomer,
   getCustomerDoc,

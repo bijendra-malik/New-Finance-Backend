@@ -26,6 +26,8 @@ Franchise customer API — mounted at /api/franchise/customer
   POST   /register                     naya customer register karo (OTP customer
                                        ke phone par jaata hai)
   POST   /verify-otp                   customer mobile + OTP -> CUST id banti hai
+  GET    /:id/draft                    pending draft resume karein
+  DELETE /:id/draft                    pending draft cancel karein
   POST   /:product/applyloan           usi customer ke liye loan apply karo
                                        e.g. /customer/personal/applyloan
                                             /customer/gold-loan/applyloan
@@ -44,6 +46,7 @@ Flow seedha hai:
   2. POST /verify-otp        mobile + OTP match -> customer ka `users` account + CUST id
   3. POST /:product/applyloan loan form draft (customer verified hona zaroori hai)
   4. POST /:id/credit-score  eligible score par actual loan application submit
+  5. GET /:id/draft           pending form ko baad mein resume karein
 
 Loan apply product ko URL se leta hai; `productFromParam` us segment ko
 LOAN_PRODUCTS key me badal kar body par pin kar deta hai, isliye usi product ke
@@ -84,6 +87,9 @@ router.post(
 );
 
 router.get("/", auth, requireApprovedFranchise, controller.list);
+
+router.get("/:id/draft", auth, requireApprovedFranchise, controller.getDraft);
+router.delete("/:id/draft", auth, requireApprovedFranchise, controller.cancelDraft);
 
 router.get("/:id", auth, requireApprovedFranchise, controller.getOne);
 

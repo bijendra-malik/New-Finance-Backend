@@ -6,6 +6,8 @@ Franchise customer controllers (approved franchise only).
 
   POST   /api/franchise/customer/register            naya customer (+ OTP)
   POST   /api/franchise/customer/verify-otp          customer ka OTP -> CUST id
+  GET    /api/franchise/customer/:id/draft           pending form resume karein
+  DELETE /api/franchise/customer/:id/draft           pending form cancel karein
   GET    /api/franchise/customer                    apne customers (+ pagination)
   GET    /api/franchise/customer/:id                ek customer
   PATCH  /api/franchise/customer/:id                details update
@@ -79,6 +81,28 @@ exports.submitCustomerCreditScore = async (req, res, next) => {
     );
 
     res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getDraft = async (req, res, next) => {
+  try {
+    const result = await service.getCustomerLoanDraft(req.franchise, req.params.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.cancelDraft = async (req, res, next) => {
+  try {
+    const result = await service.cancelCustomerLoanDraft(req.franchise, req.params.id);
+    res.json({
+      success: true,
+      message: "Pending loan draft cancelled. You can now start another loan application.",
+      ...result,
+    });
   } catch (error) {
     next(error);
   }

@@ -191,7 +191,7 @@ customer ke profile se aate hain — form inhe dobara nahi bhejta.
 */
 exports.loanApply = async (req, res, next) => {
   try {
-    const { draftId, expiresAt, product, franchiseCustomer } =
+    const { draftId, createdAt, expiresAt, product, franchiseCustomer } =
       await franchiseService.createFranchiseLoanDraft(req.franchise, req.body);
 
     res.status(202).json({
@@ -200,7 +200,7 @@ exports.loanApply = async (req, res, next) => {
       product,
       nextStep: "credit-score",
       franchiseCustomerId: franchiseCustomer._id,
-      draft: { draftId, expiresAt },
+      draft: { draftId, product, createdAt, expiresAt },
     });
   } catch (error) {
     next(error);

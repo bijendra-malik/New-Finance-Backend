@@ -54,6 +54,12 @@ const forbidden = (message) => {
   return error;
 };
 
+const conflict = (message) => {
+  const error = new Error(message);
+  error.statusCode = 409;
+  return error;
+};
+
 const notFound = (message) => {
   const error = new Error(message);
   error.statusCode = 404;
@@ -228,22 +234,33 @@ const createFranchiseLoanDraft = async (franchise, body = {}) => {
 
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
   await resolveCustomerAccount(franchiseCustomer, applicant.email);
-  const draft = await FranchiseCustomerLoanDraft.findOneAndUpdate(
-    { franchiseCustomer: franchiseCustomer._id },
-    {
-      $set: {
-        franchise: franchise._id,
-        draftId: randomUUID(),
-        product,
-        payload: { ...payload, ...applicant },
-        expiresAt: new Date(Date.now() + FRANCHISE_CUSTOMER_DRAFT_RETENTION_MS),
-      },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
+  await FranchiseCustomerLoanDraft.ensureExpiryIndex();
+
+  const existingDraft = await FranchiseCustomerLoanDraft.findOne({
+    franchise: franchise._id,
+    franchiseCustomer: franchiseCustomer._id,
+  });
+  if (existingDraft && new Date(existingDraft.expiresAt).getTime() > Date.now()) {
+    throw conflict(
+      "This customer already has an unfinished loan draft. Resume or cancel it before starting another loan."
+    );
+  }
+  if (existingDraft) {
+    await FranchiseCustomerLoanDraft.deleteOne({ _id: existingDraft._id });
+  }
+
+  const draft = await FranchiseCustomerLoanDraft.create({
+    franchise: franchise._id,
+    franchiseCustomer: franchiseCustomer._id,
+    draftId: randomUUID(),
+    product,
+    payload: { ...payload, ...applicant },
+    expiresAt: new Date(Date.now() + FRANCHISE_CUSTOMER_DRAFT_RETENTION_MS),
+  });
 
   return {
     draftId: draft.draftId,
+    createdAt: draft.createdAt,
     expiresAt: draft.expiresAt,
     product,
     franchiseCustomer,
@@ -251,6 +268,7 @@ const createFranchiseLoanDraft = async (franchise, body = {}) => {
 };
 
 const requireActiveFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draftId) => {
+  await FranchiseCustomerLoanDraft.ensureExpiryIndex();
   const draft = await FranchiseCustomerLoanDraft.findOne({
     franchise: franchise._id,
     franchiseCustomer: franchiseCustomer._id,
@@ -259,12 +277,48 @@ const requireActiveFranchiseCustomerLoanDraft = async (franchise, franchiseCusto
   });
 
   if (!draft) {
-    const error = new Error("Loan form draft was not found or has expired. Please submit the loan form again.");
+    await FranchiseCustomerLoanDraft.deleteOne({
+      franchise: franchise._id,
+      franchiseCustomer: franchiseCustomer._id,
+      draftId,
+    });
+    const error = new Error(
+      "Loan form draft was not found or has expired. Please fill and submit the loan form again."
+    );
     error.statusCode = 409;
     throw error;
   }
 
   return draft;
+};
+
+const getFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer) => {
+  await FranchiseCustomerLoanDraft.ensureExpiryIndex();
+  const draft = await FranchiseCustomerLoanDraft.findOne({
+    franchise: franchise._id,
+    franchiseCustomer: franchiseCustomer._id,
+  });
+  if (!draft) return null;
+
+  if (new Date(draft.expiresAt).getTime() <= Date.now()) {
+    await FranchiseCustomerLoanDraft.deleteOne({
+      _id: draft._id,
+      franchise: franchise._id,
+      franchiseCustomer: franchiseCustomer._id,
+    });
+    return null;
+  }
+
+  return draft;
+};
+
+const cancelFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer) => {
+  await FranchiseCustomerLoanDraft.ensureExpiryIndex();
+  const result = await FranchiseCustomerLoanDraft.deleteOne({
+    franchise: franchise._id,
+    franchiseCustomer: franchiseCustomer._id,
+  });
+  return result.deletedCount > 0;
 };
 
 const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draft, customer) => {
@@ -324,6 +378,8 @@ module.exports = {
   loginFranchise,
   createFranchiseLoanDraft,
   requireActiveFranchiseCustomerLoanDraft,
+  getFranchiseCustomerLoanDraft,
+  cancelFranchiseCustomerLoanDraft,
   finalizeFranchiseCustomerLoanDraft,
   listFranchiseLoans,
 };
