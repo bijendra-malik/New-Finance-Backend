@@ -17,6 +17,7 @@ const personalLoanController = require("../src/modules/loans/personal-loan/perso
 const { findEntryDetailMismatch } = require("../src/modules/auth/entryDetails");
 const User = require("../src/modules/auth/user.model");
 const CustomerLoanDraft = require("../src/modules/customer/customerLoanDraft.model");
+const { cancelCustomerLoanDraftValidator } = require("../src/modules/customer/customer.validator");
 
 /** Runs a chain of middlewares (like the real route) and reports the outcome. */
 const runPipeline = (chain, body) =>
@@ -110,6 +111,91 @@ describe("customerService.resolveProduct", () => {
     }
     expect(error).toBeDefined();
     expect(error.statusCode).toBe(400);
+  });
+});
+
+describe("customer loan draft cancellation", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("cancels only the draft owned by the authenticated customer", async () => {
+    const deleteOne = jest.spyOn(CustomerLoanDraft, "deleteOne").mockResolvedValue({ deletedCount: 1 });
+    const result = await customerService.cancelCustomerLoanDraft(
+      "customer-id",
+      "8f87a217-4568-4d7c-8b2d-7a1523bbdf19"
+    );
+
+    expect(deleteOne).toHaveBeenCalledWith({
+      user: "customer-id",
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      expiresAt: { $gt: expect.any(Date) },
+    });
+    expect(result).toEqual({
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      cancelled: true,
+    });
+  });
+
+  it("returns 404 when the requested draft is missing or already expired", async () => {
+    jest.spyOn(CustomerLoanDraft, "deleteOne").mockResolvedValue({ deletedCount: 0 });
+
+    await expect(
+      customerService.cancelCustomerLoanDraft("customer-id", "8f87a217-4568-4d7c-8b2d-7a1523bbdf19")
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("requires a UUID draftId to cancel a draft", async () => {
+    const result = await runPipeline(cancelCustomerLoanDraftValidator, { draftId: "not-a-uuid" });
+    expect(result.next).toBe(false);
+    expect(result.statusCode).toBe(400);
+  });
+});
+
+describe("customer loan draft retrieval", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("returns the active draft and its ID so the customer can resume or cancel it", async () => {
+    const draft = {
+      draftId: "8f87a217-4568-4d7c-8b2d-7a1523bbdf19",
+      product: "project",
+      payload: { product: "project", loanAmount: 2500000 },
+      createdAt: new Date("2026-10-23T10:00:00.000Z"),
+      expiresAt: new Date("2026-10-24T10:00:00.000Z"),
+      updatedAt: new Date("2026-10-23T10:00:00.000Z"),
+    };
+    const findOne = jest.spyOn(CustomerLoanDraft, "findOne").mockResolvedValue(draft);
+
+    const result = await customerService.getCustomerLoanDraft("customer-id");
+
+    expect(findOne).toHaveBeenCalledWith({
+      user: "customer-id",
+      expiresAt: { $gt: expect.any(Date) },
+    });
+    expect(result).toEqual({
+      hasPendingDraft: true,
+      nextStep: "credit-score",
+      draft: {
+        draftId: draft.draftId,
+        product: "project",
+        data: draft.payload,
+        createdAt: draft.createdAt,
+        expiresAt: draft.expiresAt,
+        updatedAt: draft.updatedAt,
+      },
+    });
+  });
+
+  it("indicates when there is no active draft", async () => {
+    jest.spyOn(CustomerLoanDraft, "findOne").mockResolvedValue(null);
+
+    await expect(customerService.getCustomerLoanDraft("customer-id")).resolves.toEqual({
+      hasPendingDraft: false,
+      nextStep: "loan-apply",
+      draft: null,
+    });
   });
 });
 
