@@ -28,6 +28,16 @@ exports.loanApplyForm = async (req, res, next) => {
   }
 };
 
+/* Return the logged-in customer's active draft, regardless of product. */
+exports.getLoanDraft = async (req, res, next) => {
+  try {
+    const result = await customerService.getCustomerLoanDraft(req.user.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /*
 Customer Loan Apply (unified — stores a temporary draft; product in body)
 POST /api/customer/loan-apply
@@ -45,6 +55,20 @@ exports.loanApply = async (req, res, next) => {
         draftId: draft.draftId,
         expiresAt: draft.expiresAt,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* Cancel the logged-in customer's own pending loan-form draft. */
+exports.cancelLoanDraft = async (req, res, next) => {
+  try {
+    const result = await customerService.cancelCustomerLoanDraft(req.user.id, req.body.draftId);
+    res.json({
+      success: true,
+      message: "Loan form draft cancelled. You can now start another loan application.",
+      ...result,
     });
   } catch (error) {
     next(error);

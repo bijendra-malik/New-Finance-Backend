@@ -6,7 +6,11 @@ const { requireCustomer } = require("../../middleware/franchise.middleware");
 const normalizeApplyPayload = require("../../middleware/normalizeApplyPayload.middleware");
 const verifyEntryDetails = require("../../middleware/entryDetails.middleware");
 const requireEntryProduct = require("../../middleware/entryProduct.middleware");
-const { customerLoanApplyValidator, creditScoreValidator } = require("./customer.validator");
+const {
+  customerLoanApplyValidator,
+  creditScoreValidator,
+  cancelCustomerLoanDraftValidator,
+} = require("./customer.validator");
 
 /*
 ========================================
@@ -16,6 +20,8 @@ Customer API — mounted at /api/customer
   POST /status                  public status lookup (mobile + OTP)
   GET  /loan-apply              form ka config (?product=, ?employmentType=)
   POST /loan-apply              save a temporary draft, `product` in the body
+  GET  /loan-apply/draft        get my active draft (all products)
+  DELETE /loan-apply/draft      cancel my active draft, `draftId` in the body
   POST /credit-score            eligible score submits the pending draft
   GET  /loans                   all my applications, grouped (?status=)
   GET  /loans/:applicationNo    one application's status/stage (LOAN000001)
@@ -38,6 +44,8 @@ POST /loan-apply   temporary loan-form draft, `product` in the body
 `verifyEntryDetails` form ki identity details ko entry par verify hui details se
 match karta hai (name / mobile / email / DOB / PAN) — mismatch par 400.
 */
+router.get("/loan-apply/draft", auth, requireCustomer, customerController.getLoanDraft);
+
 router.get("/loan-apply", auth, requireCustomer, customerController.loanApplyForm);
 
 router.post(
@@ -49,6 +57,14 @@ router.post(
   customerLoanApplyValidator,
   verifyEntryDetails,
   customerController.loanApply
+);
+
+router.delete(
+  "/loan-apply/draft",
+  auth,
+  requireCustomer,
+  cancelCustomerLoanDraftValidator,
+  customerController.cancelLoanDraft
 );
 
 /*
