@@ -13,6 +13,7 @@ const verifyEntryDetails = require("../src/middleware/entryDetails.middleware");
 const requireEntryProduct = require("../src/middleware/entryProduct.middleware");
 const { findEntryProductMismatch } = require("../src/modules/auth/entryProduct");
 const { USER_ROLE } = require("../src/constants/roles");
+const { LOAN_PRODUCTS, MIN_LOAN_AMOUNT } = require("../src/modules/loans/shared/loanProducts");
 const personalLoanController = require("../src/modules/loans/personal-loan/personalLoan.controller");
 const { findEntryDetailMismatch } = require("../src/modules/auth/entryDetails");
 const User = require("../src/modules/auth/user.model");
@@ -83,6 +84,26 @@ describe("productApplyValidator (unified customer + franchise entry points)", ()
     expect(result.payload.success).toBe(false);
   });
 
+  it("requires at least ₹1,00,000 for a loan amount", async () => {
+    const belowMinimum = await runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
+      ...validPersonal,
+      loanAmount: 99999,
+    });
+    expect(belowMinimum.next).toBe(false);
+    expect(belowMinimum.statusCode).toBe(400);
+    expect(belowMinimum.payload.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: "Minimum required loan amount is ₹1,00,000" }),
+      ])
+    );
+
+    const exactMinimum = await runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
+      ...validPersonal,
+      loanAmount: 100000,
+    });
+    expect(exactMinimum.next).toBe(true);
+  });
+
   it("accepts ages 18 and 65 and rejects applicants outside that range", async () => {
     const runWithAge = (years) => {
       const dob = new Date();
@@ -148,6 +169,19 @@ describe("customerService.resolveProduct", () => {
     }
     expect(error).toBeDefined();
     expect(error.statusCode).toBe(400);
+  });
+});
+
+describe("loan product minimum amounts", () => {
+  it("sets at least ₹1,00,000 for every product that requires a loan amount", () => {
+    Object.values(LOAN_PRODUCTS).forEach((product) => {
+      if (product.loanAmountRequired === false) return;
+      expect(product.loanAmountMin).toBeGreaterThanOrEqual(MIN_LOAN_AMOUNT);
+    });
+
+    expect(LOAN_PRODUCTS.fdiLoan.loanAmountMin).toBeGreaterThan(MIN_LOAN_AMOUNT);
+    expect(LOAN_PRODUCTS.npaLoan.loanAmountRequired).toBe(false);
+    expect(LOAN_PRODUCTS.creditCard.loanAmountRequired).toBe(false);
   });
 });
 

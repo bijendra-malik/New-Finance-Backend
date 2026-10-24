@@ -1,4 +1,5 @@
 const { EMPLOYMENT_TYPES } = require("../../../constants/employmentTypes");
+const MIN_LOAN_AMOUNT = 100000;
 
 /**
  * Loan product registry — the single place where a product's behaviour is defined.
@@ -444,4 +445,13 @@ const LOAN_PRODUCTS = {
   },
 };
 
-module.exports = { LOAN_PRODUCTS };
+Object.values(LOAN_PRODUCTS).forEach((config) => {
+  if (config.loanAmountRequired === false) return;
+
+  if (config.loanAmountMin < MIN_LOAN_AMOUNT) {
+    config.loanAmountMin = MIN_LOAN_AMOUNT;
+    config.loanAmountMessage = "Minimum required loan amount is ₹1,00,000";
+  }
+});
+
+module.exports = { LOAN_PRODUCTS, MIN_LOAN_AMOUNT };
