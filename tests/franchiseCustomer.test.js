@@ -436,7 +436,7 @@ describe("franchise loan apply", () => {
     expect(result.application.applicationNo).toBe("LOAN000009");
   });
 
-  it("retains the draft and does not create a loan when the score is below eligibility", async () => {
+  it("saves a rejected loan (status Rejected + reason) when the score is below eligibility", async () => {
     const customer = franchiseCustomerDoc({ isVerified: true });
     const account = {
       _id: "customer-account-id",
@@ -453,8 +453,11 @@ describe("franchise loan apply", () => {
     };
     FranchiseCustomer.findOne.mockResolvedValue(customer);
     FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
+    FranchiseCustomerLoanDraft.deleteOne.mockResolvedValue({ deletedCount: 1 });
     User.findOne.mockResolvedValue(account);
-    const createSpy = jest.spyOn(MODELS.personal, "create");
+    const createSpy = jest.spyOn(MODELS.personal, "create").mockResolvedValue({
+      toObject: () => ({ _id: "loan-id", applicationNo: "LOAN000009", status: "Rejected" }),
+    });
 
     const result = await customerService.submitCustomerCreditScore(
       FRANCHISE,
@@ -463,13 +466,34 @@ describe("franchise loan apply", () => {
       550
     );
 
-    expect(createSpy).not.toHaveBeenCalled();
-    expect(FranchiseCustomerLoanDraft.deleteOne).not.toHaveBeenCalled();
+    /*
+    Contract: score < 600 par application ABHI BANTI hai, par status
+    "Rejected" + reason (adminNote) ke saath — admin ki Reject Loans list me
+    dikhti hai aur 3 din baad TTL se apne aap delete ho jaati hai.
+    */
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const saved = createSpy.mock.calls[0][0];
+    expect(saved).toMatchObject({
+      status: "Rejected",
+      user: "customer-account-id",
+      franchise: FRANCHISE._id,
+      franchiseCode: FRANCHISE.franchiseId,
+      franchiseCustomer: FC_ID,
+      creditScore: 550,
+      creditEligible: false,
+    });
+    expect(saved.adminNote).toContain("below 600");
+    expect(saved.rejectedAt).toBeInstanceOf(Date);
+    expect(saved.autoRejectedAt).toBeInstanceOf(Date);
+
+    expect(FranchiseCustomerLoanDraft.deleteOne).toHaveBeenCalled();
     expect(result).toMatchObject({
       eligible: false,
+      rejected: true,
+      draftRetained: false,
       product: "personal",
       nextStep: "credit-score",
-      draftRetained: true,
+      applicationNo: "LOAN000009",
     });
   });
 
