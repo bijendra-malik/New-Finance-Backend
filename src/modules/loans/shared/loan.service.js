@@ -26,7 +26,7 @@ const {
   normalizeTransactionBanks,
 } = require("../../../utils/transactionBanks");
 const { creditSnapshot } = require("../../customer/credit.service");
-const { assertLoanApplicationEligibility } = require("./loanEligibility");
+const { loanEligibilityRejectionReason } = require("./loanEligibility");
 
 /**
  * Shared loan application service.
@@ -193,6 +193,19 @@ const buildLoanDocument = (productKey, body, userId, options = {}) => {
   the latest score, so this copy is what keeps an older application's score
   intact after the customer re-checks for their next loan.
   */
+  /*
+  Rule-based rejection (eligibility gate) — application turant "Rejected"
+  status me save hoti hai: `adminNote` me customer-facing reason, `rejectedAt`
+  timestamp, aur `autoRejectedAt` (TTL marker — 3 din baad record apne aap DB
+  se delete ho jaata hai).
+  */
+  if (options.rejection) {
+    data.status = "Rejected";
+    data.rejectedAt = new Date();
+    data.adminNote = String(options.rejection).slice(0, 500);
+    data.autoRejectedAt = new Date();
+  }
+
   if (options.credit) {
     data.creditScore = options.credit.creditScore;
     data.creditScoreCheckedAt = options.credit.creditScoreCheckedAt;
@@ -368,10 +381,32 @@ const createLoanController = (productKey) => {
         }
 
         // Final submit gate: company-type policy + credit score (600+ + window active).
-        assertLoanApplicationEligibility(productKey, req.body, account);
+        const reason = loanEligibilityRejectionReason(productKey, req.body, account);
 
         await assertNoExistingDirectApplication(Model, req.user.id);
         const applicationNo = await nextLoanApplicationNo();
+
+        /*
+        Rejected application bhi DB me save hoti hai (status "Rejected" + reason)
+        taaki admin ki Reject Loans list me dikhe — customer ko 403 + wahi message.
+        */
+        if (reason) {
+          const rejectedApplication = await Model.create(
+            buildLoanDocument(productKey, req.body, req.user.id, {
+              applicationNo,
+              credit: creditSnapshot(account),
+              rejection: reason,
+            })
+          );
+
+          return res.status(403).json({
+            success: false,
+            rejected: true,
+            message: reason,
+            applicationNo: rejectedApplication?.applicationNo || applicationNo,
+          });
+        }
+
         const application = await Model.create(
           buildLoanDocument(productKey, req.body, req.user.id, {
             applicationNo,

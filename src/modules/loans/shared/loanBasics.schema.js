@@ -34,7 +34,7 @@ const SERVER_MANAGED_FIELD_NAMES = [
 ];
 
 /** Set by the admin panel (PATCH /{resource}/:id/status), never by an applicant. */
-const ADMIN_REVIEW_FIELD_NAMES = ["approvedBy", "approvedAt", "rejectedAt", "adminNote"];
+const ADMIN_REVIEW_FIELD_NAMES = ["approvedBy", "approvedAt", "rejectedAt", "adminNote", "autoRejectedAt"];
 
 /** Mongoose field objects shared by every loan product's schema. */
 const ADMIN_REVIEW_FIELDS = {
@@ -42,6 +42,12 @@ const ADMIN_REVIEW_FIELDS = {
   approvedAt: { type: Date, default: null },
   rejectedAt: { type: Date, default: null },
   adminNote: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
+  /*
+  Rule-based rejection (eligibility gate) ka timestamp — sirf auto-rejected
+  documents par set hota hai. Isi field par TTL index lagta hai (3 din),
+  taaki wo record apne aap DB se remove ho jaye. Admin ke manual rejection  par ye null rehta hai — uska record kabhi delete nahi hota.
+  */
+  autoRejectedAt: { type: Date, default: null },
 };
 
 /*

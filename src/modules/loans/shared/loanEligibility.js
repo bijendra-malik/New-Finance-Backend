@@ -27,7 +27,7 @@ masters `companyTypes` seed (scripts/seedMasters.js):
 ==========================================
 */
 
-const { assertLoanEligibility } = require("../../customer/credit.service");
+const { assertLoanEligibility, creditStatus, MIN_CREDIT_SCORE } = require("../../customer/credit.service");
 const { LOAN_PRODUCTS } = require("./loanProducts");
 const { SALARIED } = require("./helpers");
 
@@ -125,6 +125,44 @@ const assertLoanApplicationEligibility = (productKey, body, account) => {
   return true;
 };
 
+/**
+ * Credit-score wala hissa — message return karta hai (throw nahi), taaki final
+ * submit par wahi reason application ke `adminNote` me save ho sake.
+ * Message credit.service.assertLoanEligibility ke bilkul same hain.
+ */
+const creditRejectionReason = (account) => {
+  const status = creditStatus(account);
+
+  if (status.creditScore === null || !account?.creditScoreCheckedAt) {
+    return "Please check your credit score before applying for a loan.";
+  }
+
+  if (status.creditScore < MIN_CREDIT_SCORE) {
+    return `Your credit score is below ${MIN_CREDIT_SCORE}, so you are not eligible to apply for a loan right now.`;
+  }
+
+  if (!status.eligible) {
+    return "Your 24-hour application window has expired. Please login with your mobile number and check your credit score again.";
+  }
+
+  return null;
+};
+
+/**
+ * Non-throwing version of the final-submit gate.
+ *
+ * Returns the rejection reason (customer-facing message) ya `null` jab
+ * application eligible ho. Final-submit doors ise call karke reason wali
+ * application ko `status: "Rejected"` ke saath DB me save karte hain, taaki
+ * admin panel (Reject Loans) dekh sake ki form kis condition par reject hua.
+ *
+ * Order: company type -> salary received as -> credit score.
+ */
+const loanEligibilityRejectionReason = (productKey, body, account) =>
+  companyTypeRejectionReason(productKey, body) ||
+  salaryReceivedAsRejectionReason(productKey, body) ||
+  creditRejectionReason(account);
+
 module.exports = {
   SALARIED_COMPANY_TYPE_REASON,
   SALARY_RECEIVED_AS_REASON,
@@ -132,5 +170,7 @@ module.exports = {
   companyTypeRejectionReason,
   isBlockedSalaryReceivedAs,
   salaryReceivedAsRejectionReason,
+  creditRejectionReason,
+  loanEligibilityRejectionReason,
   assertLoanApplicationEligibility,
 };
