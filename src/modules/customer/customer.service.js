@@ -6,7 +6,7 @@ const User = require("../auth/user.model");
 const CustomerLoanDraft = require("./customerLoanDraft.model");
 const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
 const { creditSnapshot } = require("./credit.service");
-const { assertLoanApplicationEligibility } = require("../loans/shared/loanEligibility");
+const { loanEligibilityRejectionReason } = require("../loans/shared/loanEligibility");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const {
@@ -196,23 +196,32 @@ const cancelCustomerLoanDraft = async (customerId, draftId) => {
   return { draftId, cancelled: true };
 };
 
-const finalizeCustomerLoanDraft = async (customerId, draftId, customer) => {
+const finalizeCustomerLoanDraft = async (customerId, draftId, customer, options = {}) => {
   const draft = await requireActiveCustomerLoanDraft(customerId, draftId);
   const product = resolveProduct({ product: draft.product });
 
   // Final submit gate: company-type policy + credit score (600+ + window).
-  assertLoanApplicationEligibility(product, draft.payload, customer);
+  /*
+  Final-submit gate — reason milne par application "Rejected" status me save
+  hoti hai (adminNote = reason, autoRejectedAt = TTL marker), throw nahi hoti.
+  `options.forcedReason` credit-score door score < 600 par pass karta hai.
+  */
+  const reason =
+    options.forcedReason || loanEligibilityRejectionReason(product, draft.payload, customer);
   await assertNoExistingDirectApplication(MODELS[product], customerId);
 
   const applicationNo = await nextLoanApplicationNo();
   const document = buildLoanDocument(product, draft.payload, customerId, {
     applicationNo,
     credit: creditSnapshot(customer),
+    ...(reason ? { rejection: reason } : {}),
   });
   const application = await MODELS[product].create(document);
   await CustomerLoanDraft.deleteOne({ _id: draft._id, user: customerId, draftId });
 
   return {
+    rejected: Boolean(reason),
+    reason,
     application: compactLoanResponse(sanitizeLoanResponse(product, application), { keepSections: true }),
     product,
   };

@@ -93,27 +93,49 @@ exports.checkCreditScore = async (req, res, next) => {
     await account.save();
 
     if (!result.eligible) {
+      /*
+      Score < 600 — rejected application bhi DB me save hoti hai (status
+      "Rejected" + reason), taaki admin ki Reject Loans list me dikhe.
+      */
+      const lowScore = await customerService.finalizeCustomerLoanDraft(req.user.id, draftId, account, {
+        forcedReason: result.message,
+      });
+
       return res.json({
         success: true,
         ...result,
+        rejected: true,
+        draftRetained: false,
+        product: lowScore.product,
+        applicationNo: lowScore.application?.applicationNo ?? null,
         nextStep: "credit-score",
-        draftRetained: true,
       });
     }
 
-    const { application, product } = await customerService.finalizeCustomerLoanDraft(
-      req.user.id,
-      draftId,
-      account
-    );
+    const outcome = await customerService.finalizeCustomerLoanDraft(req.user.id, draftId, account);
+
+    /* Policy / company-type / salary-mode rejection — record save ho chuki hai. */
+    if (outcome.rejected) {
+      return res.json({
+        success: true,
+        ...result,
+        eligible: false,
+        rejected: true,
+        message: outcome.reason,
+        draftRetained: false,
+        product: outcome.product,
+        applicationNo: outcome.application?.applicationNo ?? null,
+        nextStep: "credit-score",
+      });
+    }
 
     res.json({
       success: true,
       ...result,
       message: "You are eligible. Your loan application has been submitted successfully.",
-      product,
+      product: outcome.product,
       nextStep: "complete",
-      application,
+      application: outcome.application,
     });
   } catch (error) {
     next(error);

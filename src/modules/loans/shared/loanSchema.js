@@ -1,4 +1,12 @@
 const mongoose = require("mongoose");
+
+/**
+ * Auto-rejected (rule-based) applications is many seconds baad apne aap DB se
+ * remove ho jaate hain — 3-din wahi window hai jisme customer usi product par
+ * dobara apply nahi kar sakta (cooldown). Admin ke manual rejection par
+ * `autoRejectedAt` null rehta hai, uspar TTL lagu nahi hota.
+ */
+const AUTO_REJECTED_TTL_SECONDS = 3 * 24 * 60 * 60;
 const { LOAN_PRODUCTS } = require("./loanProducts");
 
 const {
@@ -163,7 +171,7 @@ const buildLoanSchema = (productKey) => {
     ? requiredPersonalDetailsFields
     : personalDetailsFields;
 
-  return new mongoose.Schema(
+  const schema = new mongoose.Schema(
     {
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
@@ -210,6 +218,14 @@ const buildLoanSchema = (productKey) => {
     },
     { timestamps: true }
   );
+
+  // Missing/null field par MongoDB TTL documents ko ignore karta hai.
+  schema.index(
+    { autoRejectedAt: 1 },
+    { expireAfterSeconds: AUTO_REJECTED_TTL_SECONDS }
+  );
+
+  return schema;
 };
 
 module.exports = {
