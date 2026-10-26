@@ -8,6 +8,7 @@ const {
   deleteApplicationHandler,
 } = require("../loans/shared/adminStatus.service");
 const dashboardController = require("./dashboard.controller");
+const rejectedLoansController = require("./rejectedLoans.controller");
 
 /*
 ==========================================
@@ -25,5 +26,11 @@ Object.keys(RESOURCE_ROUTES).forEach((resource) => {
 
 /* Dashboard stats (replaces the frontend's 15-request fan-out). */
 router.get("/dashboard/stats", dashboardController.stats);
+
+/*
+Sabhi products ki rejections (rule-based + admin decisions) — admin ki
+"Reject Loans" page isse ek call me poora data leti hai.
+*/
+router.get("/rejected-loans", rejectedLoansController.list);
 
 module.exports = router;
