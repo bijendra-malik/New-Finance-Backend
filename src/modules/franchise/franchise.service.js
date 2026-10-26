@@ -12,7 +12,7 @@ const { MODELS } = require("../loans/shared/loanModels");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
 const { creditSnapshot } = require("../customer/credit.service");
-const { assertLoanApplicationEligibility } = require("../loans/shared/loanEligibility");
+const { loanEligibilityRejectionReason } = require("../loans/shared/loanEligibility");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
@@ -322,12 +322,18 @@ const cancelFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer) =>
   return result.deletedCount > 0;
 };
 
-const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draft, customer) => {
+const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draft, customer, options = {}) => {
   const product = cleanText(draft.product);
   if (!LOAN_PRODUCTS[product] || !MODELS[product]) throw badRequest("A valid loan product is required");
 
   // Final submit gate: company-type policy + credit score (600+ + window).
-  assertLoanApplicationEligibility(product, draft.payload, customer);
+  /*
+  Final-submit gate — reason milne par application "Rejected" status me save
+  hoti hai (adminNote = reason, autoRejectedAt = TTL marker), throw nahi hoti.
+  `options.forcedReason` franchise ka credit-score door score < 600 par pass karta hai.
+  */
+  const reason =
+    options.forcedReason || loanEligibilityRejectionReason(product, draft.payload, customer);
 
   const applicationNo = await nextLoanApplicationNo();
   const applicant = applicantFromCustomer(franchiseCustomer, draft.payload);
@@ -337,6 +343,7 @@ const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, 
     franchiseCustomer: franchiseCustomer._id,
     applicationNo,
     credit: creditSnapshot(customer),
+    ...(reason ? { rejection: reason } : {}),
   });
   const application = await MODELS[product].create(document);
   await FranchiseCustomerLoanDraft.deleteOne({
@@ -347,6 +354,8 @@ const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, 
   });
 
   return {
+    rejected: Boolean(reason),
+    reason,
     application: sanitizeLoanResponse(product, application),
     product,
     customer,

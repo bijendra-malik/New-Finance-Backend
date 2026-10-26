@@ -227,7 +227,26 @@ const submitCustomerCreditScore = async (franchise, id, draftId, rawScore) => {
   await account.save();
 
   if (!result.eligible) {
-    return { ...result, product: draft.product, nextStep: "credit-score", draftRetained: true };
+    /*
+    Score < 600 — rejected application bhi DB me save hoti hai (status
+    "Rejected" + reason), taaki admin ki Reject Loans list me dikhe.
+    */
+    const lowScore = await franchiseService.finalizeFranchiseCustomerLoanDraft(
+      franchise,
+      franchiseCustomer,
+      draft,
+      account,
+      { forcedReason: result.message }
+    );
+
+    return {
+      ...result,
+      rejected: true,
+      draftRetained: false,
+      product: lowScore.product,
+      applicationNo: lowScore.application?.applicationNo ?? null,
+      nextStep: "credit-score",
+    };
   }
 
   const finalized = await franchiseService.finalizeFranchiseCustomerLoanDraft(
@@ -236,6 +255,20 @@ const submitCustomerCreditScore = async (franchise, id, draftId, rawScore) => {
     draft,
     account
   );
+
+  /* Policy / company-type / salary-mode rejection — record save ho chuki hai. */
+  if (finalized.rejected) {
+    return {
+      ...result,
+      eligible: false,
+      rejected: true,
+      message: finalized.reason,
+      draftRetained: false,
+      product: finalized.product,
+      applicationNo: finalized.application?.applicationNo ?? null,
+      nextStep: "credit-score",
+    };
+  }
 
   return {
     ...result,
