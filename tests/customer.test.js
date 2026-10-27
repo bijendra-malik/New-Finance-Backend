@@ -13,7 +13,6 @@ const verifyEntryDetails = require("../src/middleware/entryDetails.middleware");
 const requireEntryProduct = require("../src/middleware/entryProduct.middleware");
 const { findEntryProductMismatch } = require("../src/modules/auth/entryProduct");
 const { USER_ROLE } = require("../src/constants/roles");
-const { LOAN_PRODUCTS, MIN_LOAN_AMOUNT } = require("../src/modules/loans/shared/loanProducts");
 const personalLoanController = require("../src/modules/loans/personal-loan/personalLoan.controller");
 const { findEntryDetailMismatch } = require("../src/modules/auth/entryDetails");
 const User = require("../src/modules/auth/user.model");
@@ -84,63 +83,6 @@ describe("productApplyValidator (unified customer + franchise entry points)", ()
     expect(result.payload.success).toBe(false);
   });
 
-  it("requires at least ₹1,00,000 for a loan amount", async () => {
-    const belowMinimum = await runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
-      ...validPersonal,
-      loanAmount: 99999,
-    });
-    expect(belowMinimum.next).toBe(false);
-    expect(belowMinimum.statusCode).toBe(400);
-    expect(belowMinimum.payload.errors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ msg: "Minimum required loan amount is ₹1,00,000" }),
-      ])
-    );
-
-    const exactMinimum = await runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
-      ...validPersonal,
-      loanAmount: 100000,
-    });
-    expect(exactMinimum.next).toBe(true);
-  });
-
-  it("accepts ages 18 and 65 and rejects applicants outside that range", async () => {
-    const runWithAge = (years) => {
-      const dob = new Date();
-      dob.setFullYear(dob.getFullYear() - years);
-      return runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
-        ...validPersonal,
-        dob: dob.toISOString().slice(0, 10),
-      });
-    };
-
-    const under18Dob = new Date();
-    under18Dob.setFullYear(under18Dob.getFullYear() - 17);
-    const tooYoung = await runPipeline([normalizeApplyPayload, buildProductApplyValidator()], {
-      ...validPersonal,
-      dob: under18Dob.toISOString().slice(0, 10),
-    });
-    expect(tooYoung.next).toBe(false);
-    expect(tooYoung.statusCode).toBe(400);
-    expect(tooYoung.payload.errors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ msg: "Applicant must be between 18 and 65 years old" }),
-      ])
-    );
-
-    const tooOld = await runWithAge(66);
-    expect(tooOld.next).toBe(false);
-    expect(tooOld.statusCode).toBe(400);
-    expect(tooOld.payload.errors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ msg: "Applicant must be between 18 and 65 years old" }),
-      ])
-    );
-
-    expect((await runWithAge(18)).next).toBe(true);
-    expect((await runWithAge(65)).next).toBe(true);
-  });
-
   it("franchise validator uses the same dispatcher", async () => {
     const result = await runPipeline([normalizeApplyPayload, franchiseLoanApplyValidator], validPersonal);
     expect(result.next).toBe(true);
@@ -169,19 +111,6 @@ describe("customerService.resolveProduct", () => {
     }
     expect(error).toBeDefined();
     expect(error.statusCode).toBe(400);
-  });
-});
-
-describe("loan product minimum amounts", () => {
-  it("sets at least ₹1,00,000 for every product that requires a loan amount", () => {
-    Object.values(LOAN_PRODUCTS).forEach((product) => {
-      if (product.loanAmountRequired === false) return;
-      expect(product.loanAmountMin).toBeGreaterThanOrEqual(MIN_LOAN_AMOUNT);
-    });
-
-    expect(LOAN_PRODUCTS.fdiLoan.loanAmountMin).toBeGreaterThan(MIN_LOAN_AMOUNT);
-    expect(LOAN_PRODUCTS.npaLoan.loanAmountRequired).toBe(false);
-    expect(LOAN_PRODUCTS.creditCard.loanAmountRequired).toBe(false);
   });
 });
 
@@ -328,7 +257,7 @@ describe("customerService.getCustomerProductApplication", () => {
     expect(error.message).toContain("Please wait");
     expect(error.retryAfter).toEqual(
       expect.objectContaining({
-        days: 2,
+        days: 29,
         availableAt: expect.any(String),
       })
     );

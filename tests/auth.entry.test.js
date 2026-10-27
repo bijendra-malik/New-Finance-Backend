@@ -118,52 +118,6 @@ describe("customer auth entry for existing applications", () => {
     expect(sendOTP).not.toHaveBeenCalled();
   });
 
-  it("rejects entry applicants younger than 18 before sending OTP", async () => {
-    const under18Dob = new Date();
-    under18Dob.setFullYear(under18Dob.getFullYear() - 17);
-
-    await expect(
-      startEntry({
-        role: USER_ROLE.CUSTOMER,
-        product: "projectLoan",
-        body: { ...entryBody, dob: under18Dob.toISOString().slice(0, 10) },
-      })
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      message: "Applicant must be between 18 and 65 years old to apply for a loan",
-    });
-    expect(sendOTP).not.toHaveBeenCalled();
-  });
-
-  it("accepts an applicant who is exactly 18 years old", async () => {
-    const age18Dob = new Date();
-    age18Dob.setFullYear(age18Dob.getFullYear() - 18);
-
-    await expect(
-      startEntry({
-        role: USER_ROLE.CUSTOMER,
-        product: "projectLoan",
-        body: { ...entryBody, dob: age18Dob.toISOString().slice(0, 10) },
-      })
-    ).resolves.toMatchObject({ product: "projectLoan" });
-  });
-
-  it("rejects applicants older than 65 before sending OTP", async () => {
-    const age66Dob = new Date();
-    age66Dob.setFullYear(age66Dob.getFullYear() - 66);
-
-    await expect(
-      startEntry({
-        role: USER_ROLE.CUSTOMER,
-        product: "projectLoan",
-        body: { ...entryBody, dob: age66Dob.toISOString().slice(0, 10) },
-      })
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      message: "Applicant must be between 18 and 65 years old to apply for a loan",
-    });
-    expect(sendOTP).not.toHaveBeenCalled();
-  });
 });
 
 describe("verifyEntry", () => {

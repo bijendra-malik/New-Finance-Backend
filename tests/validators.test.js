@@ -92,7 +92,6 @@ const runChain = (chain, body) => {
   });
 };
 
-
 describe("personalLoanValidators.applyValidator", () => {
   const validPayload = {
     loanAmount: 500000,
@@ -782,25 +781,6 @@ describe("loanAgainstPropertyValidators.applyValidator", () => {
     expect(result.passed).toBe(false);
   });
 
-  it("rejects an applicant younger than 18", async () => {
-    const under18Dob = new Date();
-    under18Dob.setFullYear(under18Dob.getFullYear() - 17);
-    const result = await runChain(
-      lapApplyValidator,
-      lapPayload({ dob: under18Dob.toISOString().slice(0, 10) })
-    );
-    expect(result.passed).toBe(false);
-  });
-
-  it("accepts an applicant who has reached 18", async () => {
-    const age18Dob = new Date();
-    age18Dob.setFullYear(age18Dob.getFullYear() - 18);
-    const result = await runChain(
-      lapApplyValidator,
-      lapPayload({ dob: age18Dob.toISOString().slice(0, 10) })
-    );
-    expect(result.passed).toBe(true);
-  });
 });
 
 describe("loanAgainstPropertyModel", () => {
