@@ -196,7 +196,7 @@ const buildLoanDocument = (productKey, body, userId, options = {}) => {
   /*
   Rule-based rejection (eligibility gate) — application turant "Rejected"
   status me save hoti hai: `adminNote` me customer-facing reason, `rejectedAt`
-  timestamp, aur `autoRejectedAt` (TTL marker — 3 din baad record apne aap DB
+  timestamp, aur `autoRejectedAt` (TTL marker — 30 din baad record apne aap DB
   se delete ho jaata hai).
   */
   if (options.rejection) {

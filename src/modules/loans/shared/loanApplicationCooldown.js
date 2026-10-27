@@ -1,4 +1,5 @@
-const APPLICATION_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+/* Rule-based rejection ke baad customer 30 din tak usi product par dobara apply nahi kar sakta. */
+const APPLICATION_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
 const hasRecentDirectApplication = async (Model, userId) =>
   Model.findOne({

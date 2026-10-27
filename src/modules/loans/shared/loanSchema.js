@@ -2,11 +2,11 @@ const mongoose = require("mongoose");
 
 /**
  * Auto-rejected (rule-based) applications is many seconds baad apne aap DB se
- * remove ho jaate hain — 3-din wahi window hai jisme customer usi product par
+ * remove ho jaate hain — 30-din wahi window hai jisme customer usi product par
  * dobara apply nahi kar sakta (cooldown). Admin ke manual rejection par
  * `autoRejectedAt` null rehta hai, uspar TTL lagu nahi hota.
  */
-const AUTO_REJECTED_TTL_SECONDS = 3 * 24 * 60 * 60;
+const AUTO_REJECTED_TTL_SECONDS = 30 * 24 * 60 * 60;
 const { LOAN_PRODUCTS } = require("./loanProducts");
 
 const {
@@ -230,6 +230,9 @@ const buildLoanSchema = (productKey) => {
 
 module.exports = {
   buildLoanSchema,
+
+  // TTL window (seconds) — scripts/syncRejectedTtl.js isi se index update karta hai.
+  AUTO_REJECTED_TTL_SECONDS,
 
   // Field-name lists, used by the service to copy / trim fields safely.
   LOAN_FIELD_NAMES,
