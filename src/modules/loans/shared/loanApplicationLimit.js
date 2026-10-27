@@ -59,6 +59,12 @@ const reserveLoanApplicationSlot = async (userId, now = new Date()) => {
       _id: userId,
       $expr: { $lt: [{ $size: activeAttempts }, LOAN_APPLICATION_LIMIT] },
     },
+    /*
+    Aggregation-pipeline update (`$concatArrays`) — array form, not `$set`.
+    Mongoose 9 made this opt-in: without `updatePipeline: true` it throws
+    "Cannot pass an array to query updates unless the `updatePipeline` option is
+    set." before the query ever reaches MongoDB, which broke every loan apply.
+    */
     [
       {
         $set: {
@@ -68,7 +74,7 @@ const reserveLoanApplicationSlot = async (userId, now = new Date()) => {
         },
       },
     ],
-    { new: true, projection: { _id: 1 }, timestamps: false }
+    { new: true, projection: { _id: 1 }, timestamps: false, updatePipeline: true }
   );
 
   if (updatedUser) return token;
