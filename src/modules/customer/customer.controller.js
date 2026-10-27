@@ -87,7 +87,40 @@ exports.checkCreditScore = async (req, res, next) => {
     }
 
     const { draftId } = req.body;
-    await customerService.requireActiveCustomerLoanDraft(req.user.id, draftId);
+    const draft = await customerService.getActiveCustomerLoanDraft(req.user.id, draftId);
+
+    /*
+    Koi active draft nahi (form bhara hi nahi, ya 24 ghante me expire ho gaya):
+
+      - score >= 600 -> purana 409 wahi rehta hai, kuch save nahi hota;
+      - score < 600  -> account par score save + ek credit-score rejection record
+                        (admin ki Reject Loans list me dikhe). Loan application
+                        nahi ban sakti kyunki koi form hi nahi tha.
+    */
+    if (!draft) {
+      const preview = applyCreditScore(account, req.body.creditScore);
+
+      if (preview.eligible) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Loan form draft was not found or has expired. Please submit the loan form again.",
+        });
+      }
+
+      await account.save();
+      await customerService.recordCreditScoreRejection(account, preview);
+
+      return res.json({
+        success: true,
+        ...preview,
+        rejected: true,
+        draftRetained: false,
+        product: null,
+        applicationNo: null,
+        nextStep: "credit-score",
+      });
+    }
 
     const result = applyCreditScore(account, req.body.creditScore);
     await account.save();

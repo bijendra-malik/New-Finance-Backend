@@ -16,7 +16,19 @@ credit-score API kabhi alag-alag decide na karein.
 ==========================================
 */
 
+const { APPLICATION_COOLDOWN_MS } = require("../loans/shared/loanApplicationCooldown");
+
 const MIN_CREDIT_SCORE = 600;
+
+/*
+Rejection ke baad customer ko ye bhi batna hai ki wo kab dobara apply kar
+sakta hai — window wahi hai jo re-apply block karti hai
+(loanApplicationCooldown: 30 din), isliye dono ek jagah se aate hain.
+*/
+const REAPPLY_AFTER_DAYS = Math.round(APPLICATION_COOLDOWN_MS / (24 * 60 * 60 * 1000));
+
+const withReapplyWindow = (message) =>
+  message ? `${message} You can re-apply after ${REAPPLY_AFTER_DAYS} days.` : message;
 const CREDIT_SCORE_MIN = 300;
 const CREDIT_SCORE_MAX = 900;
 const ELIGIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -93,7 +105,9 @@ const applyCreditScore = (account, rawScore) => {
     ...creditStatus(account),
     message: eligible
       ? "You are eligible. Please submit your loan application within 24 hours."
-      : `Your credit score is below ${MIN_CREDIT_SCORE}, so you are not eligible to apply for a loan right now.`,
+      : withReapplyWindow(
+          `Your credit score is below ${MIN_CREDIT_SCORE}, so you are not eligible to apply for a loan right now.`
+        ),
   };
 };
 
@@ -133,13 +147,17 @@ const assertLoanEligibility = (account) => {
 
   if (status.creditScore < MIN_CREDIT_SCORE) {
     throw forbidden(
-      `Your credit score is below ${MIN_CREDIT_SCORE}, so you are not eligible to apply for a loan right now.`
+      withReapplyWindow(
+        `Your credit score is below ${MIN_CREDIT_SCORE}, so you are not eligible to apply for a loan right now.`
+      )
     );
   }
 
   if (!status.eligible) {
     throw forbidden(
-      "Your 24-hour application window has expired. Please login with your mobile number and check your credit score again."
+      withReapplyWindow(
+        "Your 24-hour application window has expired. Please login with your mobile number and check your credit score again."
+      )
     );
   }
 
@@ -151,6 +169,8 @@ module.exports = {
   CREDIT_SCORE_MIN,
   CREDIT_SCORE_MAX,
   ELIGIBILITY_WINDOW_MS,
+  REAPPLY_AFTER_DAYS,
+  withReapplyWindow,
   creditStatus,
   applyCreditScore,
   creditSnapshot,

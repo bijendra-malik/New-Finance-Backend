@@ -27,15 +27,24 @@ masters `companyTypes` seed (scripts/seedMasters.js):
 ==========================================
 */
 
-const { assertLoanEligibility, creditStatus, MIN_CREDIT_SCORE } = require("../../customer/credit.service");
+const {
+  assertLoanEligibility,
+  creditStatus,
+  withReapplyWindow,
+  MIN_CREDIT_SCORE,
+} = require("../../customer/credit.service");
 const { LOAN_PRODUCTS } = require("./loanProducts");
 const { SALARIED } = require("./helpers");
 
-const SALARIED_COMPANY_TYPE_REASON =
-  "Salaried applicants from a Partnership or Proprietorship company are not eligible for this loan.";
+/*
+Reject reason chhota rakha jaata hai — sirf wahi value jinse reject hua
+(jo applicant ne select/fill ki), poori policy list nahi. Isse admin list me
+reason ek line me padha jaata hai.
+*/
+const companyTypeReason = (value) => `Company type "${value}" is not eligible for this loan.`;
 
-const SALARY_RECEIVED_AS_REASON =
-  "Salary received as Cash or Electronically deposited-IMPS is not eligible for this loan.";
+const salaryReceivedAsReason = (value) =>
+  `Salary received as "${value}" is not eligible for this loan.`;
 
 const forbidden = (message) => {
   const error = new Error(message);
@@ -75,12 +84,16 @@ const salariedContext = (productKey, body) => {
   return { payload, employmentType };
 };
 
+/** Jo value block hui wahi reason me jaati hai (Other ka free-text samet). */
+const blockedValue = (values, isBlocked) =>
+  values.find((value) => typeof value === "string" && value.trim() && isBlocked(value));
+
 const companyTypeRejectionReason = (productKey, body) => {
   const { payload, employmentType } = salariedContext(productKey, body);
   if (employmentType !== SALARIED) return null;
 
-  const blocked = [payload.companyType, payload.companyTypeOther].some(isBlockedCompanyType);
-  return blocked ? SALARIED_COMPANY_TYPE_REASON : null;
+  const blocked = blockedValue([payload.companyType, payload.companyTypeOther], isBlockedCompanyType);
+  return blocked ? companyTypeReason(blocked.trim()) : null;
 };
 
 /**
@@ -100,10 +113,11 @@ const salaryReceivedAsRejectionReason = (productKey, body) => {
   const { payload, employmentType } = salariedContext(productKey, body);
   if (employmentType !== SALARIED) return null;
 
-  const blocked = [payload.salaryReceivedAs, payload.salaryReceivedAsOther].some(
+  const blocked = blockedValue(
+    [payload.salaryReceivedAs, payload.salaryReceivedAsOther],
     isBlockedSalaryReceivedAs
   );
-  return blocked ? SALARY_RECEIVED_AS_REASON : null;
+  return blocked ? salaryReceivedAsReason(blocked.trim()) : null;
 };
 
 /**
@@ -159,13 +173,15 @@ const creditRejectionReason = (account) => {
  * Order: company type -> salary received as -> credit score.
  */
 const loanEligibilityRejectionReason = (productKey, body, account) =>
-  companyTypeRejectionReason(productKey, body) ||
-  salaryReceivedAsRejectionReason(productKey, body) ||
-  creditRejectionReason(account);
+  withReapplyWindow(
+    companyTypeRejectionReason(productKey, body) ||
+      salaryReceivedAsRejectionReason(productKey, body) ||
+      creditRejectionReason(account)
+  );
 
 module.exports = {
-  SALARIED_COMPANY_TYPE_REASON,
-  SALARY_RECEIVED_AS_REASON,
+  companyTypeReason,
+  salaryReceivedAsReason,
   isBlockedCompanyType,
   companyTypeRejectionReason,
   isBlockedSalaryReceivedAs,

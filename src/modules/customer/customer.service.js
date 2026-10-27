@@ -4,6 +4,7 @@ const { randomUUID } = require("crypto");
 const { nextLoanApplicationNo } = require("../../utils/sequence");
 const User = require("../auth/user.model");
 const CustomerLoanDraft = require("./customerLoanDraft.model");
+const CreditScoreRejection = require("./creditScoreRejection.model");
 const { ACCOUNT_NOT_FOUND_MESSAGE } = require("../auth/entryDetails");
 const { creditSnapshot } = require("./credit.service");
 const { loanEligibilityRejectionReason } = require("../loans/shared/loanEligibility");
@@ -227,6 +228,24 @@ const finalizeCustomerLoanDraft = async (customerId, draftId, customer, options 
   };
 };
 
+/**
+ * Credit score < 600 par jab koi active loan-form draft nahi hota (customer ne
+ * form bhara hi nahi, ya draft 24 ghante me expire ho gaya) — tab loan
+ * application banti hi nahi, isliye admin ki Reject Loans list me kuch nahi
+ * aata tha. Ye record usi gap ko bharta hai: kaun, kitna score, kya reason.
+ *
+ * Same 30-din TTL par delete hota hai jo rule-rejected applications par lagta hai.
+ */
+const recordCreditScoreRejection = async (account, result) =>
+  CreditScoreRejection.create({
+    user: account._id,
+    fullName: account.name || "",
+    mobile: account.mobile || "",
+    creditScore: result?.creditScore ?? null,
+    reason: result?.message || "",
+    autoRejectedAt: new Date(),
+  });
+
 /** Existing direct application for the selected product, if one exists. */
 const getCustomerProductApplication = async (customerId, product) => {
   const key = resolveProduct({ product });
@@ -385,6 +404,7 @@ module.exports = {
   requireActiveCustomerLoanDraft,
   cancelCustomerLoanDraft,
   finalizeCustomerLoanDraft,
+  recordCreditScoreRejection,
   getCustomerProductApplication,
   listCustomerLoans,
   getCustomerLoanDetail,
