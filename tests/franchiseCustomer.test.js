@@ -259,6 +259,41 @@ describe("franchise apne customer ki detail aur loan status dekhta hai", () => {
     expect(MODELS.personal.find).toHaveBeenCalledWith({ franchiseCustomer: FC_ID, franchise: "frn-id" });
   });
 
+  it("includes rejected applications and their reason in the franchise customer's loan history", async () => {
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
+    stubLoanQueries({
+      personal: [
+        loanDoc({
+          status: "Rejected",
+          adminNote: "Your credit score is below 600.",
+          rejectedAt: new Date("2026-10-03T00:00:00.000Z"),
+          creditScore: 550,
+          franchise: FRANCHISE._id,
+          franchiseCode: FRANCHISE.franchiseId,
+          franchiseCustomer: FC_ID,
+        }),
+      ],
+    });
+
+    const result = await customerService.listCustomerLoans(FRANCHISE, FC_ID);
+    const application = result.data[0].applications[0];
+
+    expect(result.byStatus.Rejected).toBe(1);
+    expect(application).toMatchObject({
+      applicationNo: "LOAN000031",
+      status: "Rejected",
+      stage: "Rejected",
+      adminNote: "Your credit score is below 600.",
+      details: {
+        fullName: "Rahul Sharma",
+        mobile: "9876543210",
+        panNumber: "ABCDE1234F",
+        creditScore: 550,
+        franchiseCustomer: FC_ID,
+      },
+    });
+  });
+
   it("returns an empty tracking view when the customer has no loans yet", async () => {
     FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
     stubLoanQueries({});
@@ -479,6 +514,10 @@ describe("franchise loan apply", () => {
       franchise: FRANCHISE._id,
       franchiseCode: FRANCHISE.franchiseId,
       franchiseCustomer: FC_ID,
+      fullName: "Rahul Sharma",
+      mobile: "9876543210",
+      panNumber: "ABCDE1234F",
+      dob: "1995-05-15",
       creditScore: 550,
       creditEligible: false,
     });
