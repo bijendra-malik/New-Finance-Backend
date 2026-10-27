@@ -13,6 +13,7 @@ const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
 const { creditSnapshot } = require("../customer/credit.service");
 const { loanEligibilityRejectionReason } = require("../loans/shared/loanEligibility");
+const { createLoanApplicationWithLimit } = require("../loans/shared/loanApplicationLimit");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 
@@ -345,7 +346,9 @@ const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, 
     credit: creditSnapshot(customer),
     ...(reason ? { rejection: reason } : {}),
   });
-  const application = await MODELS[product].create(document);
+  const application = await createLoanApplicationWithLimit(customer._id, () =>
+    MODELS[product].create(document)
+  );
   await FranchiseCustomerLoanDraft.deleteOne({
     _id: draft._id,
     franchise: franchise._id,

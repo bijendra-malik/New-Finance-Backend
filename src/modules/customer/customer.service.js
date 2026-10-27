@@ -10,6 +10,7 @@ const { creditSnapshot } = require("./credit.service");
 const { loanEligibilityRejectionReason } = require("../loans/shared/loanEligibility");
 const { MODELS, describeLoanStatus, STATUS_STEP_LABELS } = require("../loans/shared/loanStatus");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
+const { createLoanApplicationWithLimit } = require("../loans/shared/loanApplicationLimit");
 const {
   buildLoanDocument,
   sanitizeLoanResponse,
@@ -217,7 +218,9 @@ const finalizeCustomerLoanDraft = async (customerId, draftId, customer, options 
     credit: creditSnapshot(customer),
     ...(reason ? { rejection: reason } : {}),
   });
-  const application = await MODELS[product].create(document);
+  const application = await createLoanApplicationWithLimit(customerId, () =>
+    MODELS[product].create(document)
+  );
   await CustomerLoanDraft.deleteOne({ _id: draft._id, user: customerId, draftId });
 
   return {

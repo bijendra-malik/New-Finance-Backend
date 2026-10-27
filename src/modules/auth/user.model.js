@@ -111,6 +111,19 @@ const userSchema = new mongoose.Schema(
     creditScoreCheckedAt: { type: Date, default: null },
     creditEligible: { type: Boolean, default: false },
     creditEligibilityExpiresAt: { type: Date, default: null },
+
+    // Internal rolling-window record shared by direct and franchise loan submissions.
+    loanApplicationAttempts: {
+      type: [
+        {
+          token: { type: String, required: true },
+          at: { type: Date, required: true },
+          _id: false,
+        },
+      ],
+      default: [],
+      select: false,
+    },
   },
   {
     timestamps: true,

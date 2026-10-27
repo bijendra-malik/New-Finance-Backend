@@ -4,6 +4,7 @@ const {
   hasRecentDirectApplication,
   createApplicationCooldownError,
 } = require("./loanApplicationCooldown");
+const { createLoanApplicationWithLimit } = require("./loanApplicationLimit");
 const { USER_ROLE } = require("../../../constants/roles");
 const { nextLoanApplicationNo } = require("../../../utils/sequence");
 const User = require("../../auth/user.model");
@@ -391,12 +392,12 @@ const createLoanController = (productKey) => {
         taaki admin ki Reject Loans list me dikhe — customer ko 403 + wahi message.
         */
         if (reason) {
-          const rejectedApplication = await Model.create(
-            buildLoanDocument(productKey, req.body, req.user.id, {
+          const rejectedApplication = await createLoanApplicationWithLimit(req.user.id, () =>
+            Model.create(buildLoanDocument(productKey, req.body, req.user.id, {
               applicationNo,
               credit: creditSnapshot(account),
               rejection: reason,
-            })
+            }))
           );
 
           return res.status(403).json({
@@ -407,11 +408,11 @@ const createLoanController = (productKey) => {
           });
         }
 
-        const application = await Model.create(
-          buildLoanDocument(productKey, req.body, req.user.id, {
+        const application = await createLoanApplicationWithLimit(req.user.id, () =>
+          Model.create(buildLoanDocument(productKey, req.body, req.user.id, {
             applicationNo,
             credit: creditSnapshot(account),
-          })
+          }))
         );
         res.status(201).json({
           success: true,
