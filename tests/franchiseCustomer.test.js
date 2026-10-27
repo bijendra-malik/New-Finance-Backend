@@ -19,6 +19,8 @@ jest.mock("../src/modules/franchise/franchiseCustomerLoanDraft.model", () => ({
 jest.mock("../src/modules/auth/user.model", () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
+  findOneAndUpdate: jest.fn().mockResolvedValue({ _id: "customer-account-id" }),
+  updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   create: jest.fn(),
 }));
 /*

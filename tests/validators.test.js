@@ -37,7 +37,11 @@ The apply handlers read the verified account (entry details check) and mint an
 application number before saving. Both are DB-backed, so they are mocked here —
 otherwise Mongoose buffers the query and every controller test times out.
 */
-jest.mock("../src/modules/auth/user.model", () => ({ findById: jest.fn() }));
+jest.mock("../src/modules/auth/user.model", () => ({
+  findById: jest.fn(),
+  findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
+}));
 jest.mock("../src/utils/sequence", () => ({ nextLoanApplicationNo: jest.fn() }));
 
 const User = require("../src/modules/auth/user.model");
@@ -59,10 +63,19 @@ const verifiedAccount = {
 
 beforeEach(() => {
   User.findById.mockResolvedValue(verifiedAccount);
+  User.findOneAndUpdate.mockResolvedValue({ _id: "customer-id" });
+  User.updateOne.mockResolvedValue({ modifiedCount: 1 });
   nextLoanApplicationNo.mockResolvedValue("LOAN000001");
   jest.spyOn(HomeLoan, "exists").mockResolvedValue(null);
   jest.spyOn(PersonalLoan, "exists").mockResolvedValue(null);
   jest.spyOn(LoanAgainstProperty, "exists").mockResolvedValue(null);
+  [HomeLoan, PersonalLoan, LoanAgainstProperty].forEach((Model) => {
+    jest.spyOn(Model, "findOne").mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(null),
+    });
+  });
 });
 
 /** Runs an express-validator chain (+ the trailing handleValidationErrors) against a fake req. */
