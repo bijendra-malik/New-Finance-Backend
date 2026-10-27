@@ -10,10 +10,6 @@ const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { MODELS } = require("../loans/shared/loanModels");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 const {
-  MIN_APPLICANT_AGE,
-  MAX_APPLICANT_AGE,
-} = require("../loans/shared/personalDetails.rules");
-const {
   hasRecentDirectApplication,
   createApplicationCooldownError,
 } = require("../loans/shared/loanApplicationCooldown");
@@ -80,15 +76,6 @@ const cleanText = (value) => String(value ?? "").trim();
 const unwrap = (body) =>
   body && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : body || {};
 
-/** Poori umar (saal me). */
-const ageInYears = (birthDate) => {
-  const now = new Date();
-  let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
-  const monthDiff = now.getUTCMonth() - birthDate.getUTCMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < birthDate.getUTCDate())) age -= 1;
-  return age;
-};
-
 /*
 Entry ka OTP sirf entry documents par chalta hai. Status (`purpose: "status"`),
 login (`purpose: "login"`) aur franchise-status OTPs alag rehte hain, isliye ek
@@ -134,13 +121,6 @@ const buildPendingDetails = (body = {}) => {
   if (!dob || Number.isNaN(dob.getTime())) {
     throw badRequest("Enter a valid date of birth (YYYY-MM-DD)");
   }
-  const applicantAge = ageInYears(dob);
-  if (applicantAge < MIN_APPLICANT_AGE || applicantAge > MAX_APPLICANT_AGE) {
-    throw badRequest(
-      `Applicant must be between ${MIN_APPLICANT_AGE} and ${MAX_APPLICANT_AGE} years old to apply for a loan`
-    );
-  }
-
   /*
   Entry form se continent, country, city aur pincode capture hote hain. State
   franchise entry ke is form ka hissa nahi hai.

@@ -2,7 +2,6 @@ const { body } = require("express-validator");
 
 const handleValidationErrors = require("../../middleware/validation.middleware");
 const { PAN_PATTERN, MOBILE_PATTERN, PINCODE_PATTERN } = require("../loans/shared/helpers");
-const { adultApplicantCheck } = require("../loans/shared/personalDetails.rules");
 
 /*
 ==========================================
@@ -27,7 +26,7 @@ const franchiseCustomerValidator = [
     .toUpperCase()
     .matches(PAN_PATTERN)
     .withMessage("Enter a valid PAN number (e.g. ABCDE1234F)"),
-  body("dob").isISO8601().withMessage("Enter a valid date of birth").custom(adultApplicantCheck),
+  body("dob").isISO8601().withMessage("Enter a valid date of birth"),
   /*
   Email zaroori hai — OTP verify hone par isi se customer ka `users` account
   (aur CUST id) banta hai, aur us model me email required + unique hai.
@@ -64,8 +63,7 @@ const franchiseCustomerUpdateValidator = [
   body("dob")
     .optional({ values: "falsy" })
     .isISO8601()
-    .withMessage("Enter a valid date of birth")
-    .custom(adultApplicantCheck),
+    .withMessage("Enter a valid date of birth"),
   body("email").optional({ values: "falsy" }).trim().isEmail().withMessage("Enter a valid email address"),
   body("pincode")
     .optional({ values: "falsy" })

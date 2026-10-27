@@ -1,5 +1,4 @@
 const { EMPLOYMENT_TYPES } = require("../../../constants/employmentTypes");
-const MIN_LOAN_AMOUNT = 100000;
 
 /**
  * Loan product registry — the single place where a product's behaviour is defined.
@@ -127,8 +126,7 @@ const LOAN_PRODUCTS = {
     personalDetailsRequired: true,
     exposureRequired: true,
     loanRequirements: "collateralProperty",
-    loanAmountMin: 100000,
-    loanAmountMessage: "Minimum required loan amount is ₹1,00,000",
+    loanAmountMin: 1,
     loanTenureMin: 3,
     loanTenureMessage: "Select loan tenure (minimum 1 year)",
     salary: { min: 12001, message: "Monthly net salary must be greater than 12,000" },
@@ -150,8 +148,7 @@ const LOAN_PRODUCTS = {
     exposureRequired: true,
     // Same "collateral property" section as LAP — shared, not duplicated.
     loanRequirements: "collateralProperty",
-    loanAmountMin: 100000,
-    loanAmountMessage: "Minimum required loan amount is ₹1,00,000",
+    loanAmountMin: 1,
     loanTenureMin: 3,
     loanTenureMessage: "Select loan tenure (minimum 1 year)",
     salary: { min: 12001, message: "Monthly net salary must be greater than 12,000" },
@@ -173,7 +170,7 @@ const LOAN_PRODUCTS = {
     exposureRequired: true,
     // Same "collateral property" section as LAP / Working Capital — shared, not duplicated.
     loanRequirements: "collateralProperty",
-    loanAmountMin: 100000,
+    loanAmountMin: 1,
     loanAmountMessage: "Minimum required OD / CC limit is ₹1,00,000",
     // The dashboard asks for a renewal tenure "between 3-40 years".
     loanTenureMin: 3,
@@ -197,8 +194,7 @@ const LOAN_PRODUCTS = {
     personalDetailsRequired: true,
     exposureRequired: true,
     loanRequirements: "loanAgainstShare",
-    loanAmountMin: 100000,
-    loanAmountMessage: "Minimum required loan amount is ₹1,00,000",
+    loanAmountMin: 1,
     // The dashboard offers 1-7 years (+ "More than 7 years").
     loanTenureMin: 3,
     loanTenureMessage: "Loan tenure (in years) must be at least 1",
@@ -222,7 +218,7 @@ const LOAN_PRODUCTS = {
     loanRequirements: "filmFunding",
     // Repeatable requirement fields — the service turns a CSV string into an array.
     multiValueFields: ["filmLanguages", "starCastNames"],
-    loanAmountMin: 100000,
+    loanAmountMin: 1,
     loanAmountMessage: "Minimum required funds amount is ₹1,00,000",
     // The dashboard offers 1-10 years (+ "More than 10 years").
     loanTenureMin: 3,
@@ -269,8 +265,7 @@ const LOAN_PRODUCTS = {
     personalDetailsRequired: true,
     exposureRequired: true,
     loanRequirements: "leaseRentalDiscounting",
-    loanAmountMin: 100000,
-    loanAmountMessage: "Minimum required loan amount is ₹1,00,000",
+    loanAmountMin: 1,
     loanTenureMin: 3,
     loanTenureMessage: "Select loan tenure (minimum 1 year)",
     salary: { min: 12001, message: "Monthly net salary must be greater than 12,000" },
@@ -445,13 +440,4 @@ const LOAN_PRODUCTS = {
   },
 };
 
-Object.values(LOAN_PRODUCTS).forEach((config) => {
-  if (config.loanAmountRequired === false) return;
-
-  if (config.loanAmountMin < MIN_LOAN_AMOUNT) {
-    config.loanAmountMin = MIN_LOAN_AMOUNT;
-    config.loanAmountMessage = "Minimum required loan amount is ₹1,00,000";
-  }
-});
-
-module.exports = { LOAN_PRODUCTS, MIN_LOAN_AMOUNT };
+module.exports = { LOAN_PRODUCTS };
