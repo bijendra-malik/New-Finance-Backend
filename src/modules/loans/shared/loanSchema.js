@@ -1,12 +1,11 @@
 const mongoose = require("mongoose");
 
 /**
- * Auto-rejected (rule-based) applications are retained for 30 days for admin
- * review, then removed automatically. This retention period is independent of
- * the 3-day same-product reapplication cooldown. Admin's manual rejection has
- * `autoRejectedAt` null, so TTL does not apply.
+ * Auto-rejected (rule-based) applications are retained for 3 days, matching
+ * the same-product reapplication cooldown, then removed automatically.
+ * Admin's manual rejection has `autoRejectedAt` null, so TTL does not apply.
  */
-const AUTO_REJECTED_TTL_SECONDS = 30 * 24 * 60 * 60;
+const AUTO_REJECTED_TTL_SECONDS = 3 * 24 * 60 * 60;
 const { LOAN_PRODUCTS } = require("./loanProducts");
 
 const {

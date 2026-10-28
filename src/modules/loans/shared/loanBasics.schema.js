@@ -43,7 +43,7 @@ const ADMIN_REVIEW_FIELDS = {
   rejectedAt: { type: Date, default: null },
   adminNote: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
   /*
-  Rule-based rejection (eligibility gate) ka timestamp — sirf auto-rejected  documents par set hota hai. Isi field par TTL index lagta hai (30 din),
+  Rule-based rejection (eligibility gate) ka timestamp — sirf auto-rejected documents par set hota hai. Isi field par TTL index lagta hai (3 din),
   taaki wo record apne aap DB se remove ho jaye. Admin ke manual rejection  par ye null rehta hai — uska record kabhi delete nahi hota.
   */
   autoRejectedAt: { type: Date, default: null },

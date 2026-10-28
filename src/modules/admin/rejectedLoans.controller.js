@@ -24,10 +24,9 @@ Har row par `channel` hota hai, taaki admin ek nazar me alag kar sake:
 Har non-auto row par `rejectedBy` hota hai — kaun se admin ne reject kiya
 (`approvedBy` id ka naam), rule-based rows par nahi.
 
-`autoRejectedAt` wale records 30 din baad MongoDB TTL se apne aap delete ho
-jaate hain. Ye admin review ke liye retention hai; same-product reapply
-cooldown 3 din ka hai. Isliye yahan sirf jo records abhi tak retain hain wahi
-aate hain.
+`autoRejectedAt` wale records 3 din baad MongoDB TTL se apne aap delete ho
+jaate hain, jo same-product reapply cooldown ke barabar hai. Isliye yahan sirf
+jo records abhi tak retain hain wahi aate hain.
 ==========================================
 */
 

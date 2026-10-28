@@ -13,7 +13,7 @@ Kyun alag collection?
     ko khaali document se ganda nahi karte.
 
 `autoRejectedAt` par wahi TTL index lagta hai jo rule-rejected applications par
-lagta hai (loanSchema) — 30 din baad record apne aap delete.
+lagta hai (loanSchema) — 3 din baad record apne aap delete.
 ==========================================
 */
 
@@ -34,7 +34,7 @@ const creditScoreRejectionSchema = new mongoose.Schema(
     // Customer-facing reason (same message jo customer ko dikhaya jaata hai).
     reason: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
 
-    // TTL marker — isi field par 30-din ka index hai.
+    // TTL marker — isi field par 3-day index hai.
     autoRejectedAt: { type: Date, default: () => new Date() },
   },
   { timestamps: true }

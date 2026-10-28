@@ -3,8 +3,8 @@
 Rule-based rejections ka TTL index sync karta hai.
 
 MongoDB schema change se purana index apne aap update nahi hota — agar
-collection me pehle se `autoRejectedAt` ka TTL index kisi purane window
-(jaise 3 din) par bana hua hai, to usi window par delete hota rahega.
+collection me pehle se `autoRejectedAt` ka TTL index kisi purane window par
+bana hua hai, to usi window par delete hota rahega.
 Ye script har loan collection ka index dekhkar, window badla hua hone par
 usko drop karke naya index (loanSchema.js wali value ke saath) bana deta hai.
 
