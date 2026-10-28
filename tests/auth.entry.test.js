@@ -15,7 +15,7 @@ jest.mock("../src/modules/loans/shared/loanModels", () => ({
   },
 }));
 jest.mock("../src/modules/loans/shared/loanApplicationCooldown", () => ({
-  hasRecentDirectApplication: jest.fn(),
+  hasRecentApplication: jest.fn(),
   createApplicationCooldownError: jest.fn((application, loanType) => {
     const error = new Error(
       `You have already applied for the ${loanType}. Please wait 1 day, 2 hours before applying again.`
@@ -42,7 +42,7 @@ const generateToken = require("../src/utils/generateToken");
 const { USER_ROLE } = require("../src/constants/roles");
 const { MODELS } = require("../src/modules/loans/shared/loanModels");
 const {
-  hasRecentDirectApplication,
+  hasRecentApplication,
   createApplicationCooldownError,
 } = require("../src/modules/loans/shared/loanApplicationCooldown");
 const { startEntry, verifyEntry, startLogin, verifyLogin } = require("../src/modules/auth/entry.service");
@@ -100,7 +100,7 @@ describe("customer auth entry for existing applications", () => {
     });
 
     expect(result.product).toBe("projectLoan");
-    expect(hasRecentDirectApplication).not.toHaveBeenCalled();
+    expect(hasRecentApplication).not.toHaveBeenCalled();
     expect(sendOTP).toHaveBeenCalledWith("9876543210", expect.any(String));
   });
 
@@ -361,7 +361,7 @@ describe("verifyEntry", () => {
 describe("customer login (phone OTP)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    hasRecentDirectApplication.mockResolvedValue(null);
+    hasRecentApplication.mockResolvedValue(null);
     sendOTP.mockResolvedValue(true);
     OTP.create.mockResolvedValue({});
     OTP.deleteMany.mockResolvedValue({ deletedCount: 1 });
@@ -421,7 +421,7 @@ describe("customer login (phone OTP)", () => {
     expect(result.loanType).toBe("Gold Loan");
     expect(result.nextStep).toBe("loan-apply");
     expect(result).not.toHaveProperty("credit");
-    expect(hasRecentDirectApplication).toHaveBeenCalledWith(MODELS.goldLoan, "u1");
+    expect(hasRecentApplication).toHaveBeenCalledWith(MODELS.goldLoan, "u1");
     expect(generateToken).toHaveBeenCalledWith(expect.anything(), { login: true });
     expect(OTP.deleteMany).toHaveBeenCalledWith({ mobile: "9876543210", purpose: "login" });
   });
@@ -442,7 +442,7 @@ describe("customer login (phone OTP)", () => {
       role: USER_ROLE.CUSTOMER,
       save: jest.fn(),
     });
-    hasRecentDirectApplication.mockResolvedValue({ _id: "application-id" });
+    hasRecentApplication.mockResolvedValue({ _id: "application-id" });
 
     await expect(
       verifyLogin({ mobile: "9876543210", otp: "123456", product: "fdiLoan" })

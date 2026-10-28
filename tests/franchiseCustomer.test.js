@@ -360,7 +360,14 @@ describe("franchise loan apply", () => {
     loanTenure: 2,
   });
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(MODELS.personal, "findOne").mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(null),
+    });
+  });
   afterEach(() => jest.restoreAllMocks());
 
   it("requires the franchise customer id", async () => {
@@ -406,6 +413,71 @@ describe("franchise loan apply", () => {
       expiresAt: expect.any(Date),
       franchiseCustomer: { _id: FC_ID },
     });
+  });
+
+  it("blocks a franchise draft when the same product has a recent application from any channel", async () => {
+    const recentApplication = {
+      createdAt: new Date(Date.now() - 2 * 60 * 1000),
+    };
+    const query = {
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(recentApplication),
+    };
+    MODELS.personal.findOne.mockReturnValue(query);
+    FranchiseCustomer.findOne.mockResolvedValue(franchiseCustomerDoc({ isVerified: true }));
+    User.findOne.mockResolvedValue({ _id: "customer-account-id", mobile: "9876543210", role: USER_ROLE.CUSTOMER });
+
+    await expect(franchiseService.createFranchiseLoanDraft(FRANCHISE, payroll())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Please wait"),
+    });
+
+    expect(MODELS.personal.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: "customer-account-id",
+        createdAt: expect.objectContaining({ $gt: expect.any(Date) }),
+      })
+    );
+    expect(FranchiseCustomerLoanDraft.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks final submission of an existing franchise draft during the 30-day cooldown", async () => {
+    const customer = franchiseCustomerDoc({ isVerified: true });
+    const account = {
+      _id: "customer-account-id",
+      mobile: customer.mobile,
+      role: USER_ROLE.CUSTOMER,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const draft = {
+      _id: "draft-record-id",
+      draftId: "active-draft-id",
+      product: "personal",
+      payload: payroll(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
+    MODELS.personal.findOne.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        createdAt: new Date(Date.now() - 2 * 60 * 1000),
+      }),
+    });
+    FranchiseCustomer.findOne.mockResolvedValue(customer);
+    FranchiseCustomerLoanDraft.findOne.mockResolvedValue(draft);
+    User.findOne.mockResolvedValue(account);
+    const createSpy = jest.spyOn(MODELS.personal, "create");
+
+    await expect(
+      customerService.submitCustomerCreditScore(FRANCHISE, FC_ID, draft.draftId, 720)
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Please wait"),
+    });
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(FranchiseCustomerLoanDraft.deleteOne).not.toHaveBeenCalled();
   });
 
   it("does not replace an existing customer draft when another application is started", async () => {

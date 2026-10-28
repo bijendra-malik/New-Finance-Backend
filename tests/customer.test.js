@@ -4,7 +4,7 @@ const customerService = require("../src/modules/customer/customer.service");
 const customerController = require("../src/modules/customer/customer.controller");
 const { describeLoanStatus, MODELS } = require("../src/modules/loans/shared/loanStatus");
 const {
-  assertNoExistingDirectApplication,
+  assertNoRecentApplication,
   compactLoanResponse,
   sanitizeLoanResponse,
 } = require("../src/modules/loans/shared/loan.service");
@@ -250,7 +250,7 @@ describe("customerService.getCustomerProductApplication", () => {
     };
     const findOne = jest.spyOn(MODELS.personal, "findOne").mockReturnValue(query);
 
-    const error = await assertNoExistingDirectApplication(MODELS.personal, "customer-id").catch(
+    const error = await assertNoRecentApplication(MODELS.personal, "customer-id").catch(
       (caught) => caught
     );
     expect(error.statusCode).toBe(409);
@@ -264,7 +264,6 @@ describe("customerService.getCustomerProductApplication", () => {
     expect(findOne).toHaveBeenCalledWith(
       expect.objectContaining({
         user: "customer-id",
-        franchise: null,
         createdAt: expect.objectContaining({ $gt: expect.any(Date) }),
       })
     );
