@@ -5,6 +5,7 @@ const {
   creditSnapshot,
   assertLoanEligibility,
 } = require("../src/modules/customer/credit.service");
+const { AUTO_REJECTED_TTL_SECONDS } = require("../src/modules/loans/shared/loanSchema");
 
 const account = (overrides = {}) => ({
   creditScore: null,
@@ -15,6 +16,10 @@ const account = (overrides = {}) => ({
 });
 
 describe("credit score eligibility", () => {
+  it("retains auto-rejected records for the same three-day reapply window", () => {
+    expect(AUTO_REJECTED_TTL_SECONDS).toBe(3 * 24 * 60 * 60);
+  });
+
   it("marks a score below 600 as not eligible and starts no window", () => {
     const user = account();
     const result = applyCreditScore(user, 599);

@@ -578,7 +578,7 @@ describe("franchise loan apply", () => {
     /*
     Contract: score < 600 par application ABHI BANTI hai, par status
     "Rejected" + reason (adminNote) ke saath — admin ki Reject Loans list me
-    dikhti hai aur 30 din baad TTL se apne aap delete ho jaati hai.
+    dikhti hai aur 3 din baad TTL se apne aap delete ho jaati hai.
     */
     expect(createSpy).toHaveBeenCalledTimes(1);
     const saved = createSpy.mock.calls[0][0];
