@@ -29,8 +29,26 @@ Kam se kam ek bhejna zaroori hai.
 */
 const franchiseEntryValidator = [
   ...entryFieldRules,
-  body("city").optional().trim(),
-  body("pincode").optional().trim(),
+  body("continent")
+    .trim()
+    .notEmpty()
+    .withMessage("Continent is required"),
+  body("country")
+    .trim()
+    .notEmpty()
+    .withMessage("Country is required"),
+  body("state")
+    .trim()
+    .notEmpty()
+    .withMessage("Current state is required"),
+  body("city")
+    .trim()
+    .notEmpty()
+    .withMessage("Current city is required"),
+  body("pincode")
+    .trim()
+    .matches(/^\d{6}$/)
+    .withMessage("Enter a valid 6-digit pincode"),
   body("planCode")
     .trim()
     .custom((value, { req }) => {

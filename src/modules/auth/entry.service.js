@@ -122,8 +122,7 @@ const buildPendingDetails = (body = {}) => {
     throw badRequest("Enter a valid date of birth (YYYY-MM-DD)");
   }
   /*
-  Entry form se continent, country, city aur pincode capture hote hain. State
-  franchise entry ke is form ka hissa nahi hai.
+  Entry form se continent, country, state, city aur pincode capture hote hain.
   */
   return {
     name,
@@ -133,6 +132,7 @@ const buildPendingDetails = (body = {}) => {
     panNumber,
     continent: cleanText(payload.continent),
     country: cleanText(payload.country),
+    state: cleanText(payload.state),
     city: cleanText(payload.city),
     pincode: cleanText(payload.pincode),
   };
@@ -199,6 +199,7 @@ const upsertCustomer = async (mobile, details) => {
       panNumber: details.panNumber,
       continent: details.continent,
       country: details.country,
+      state: details.state,
       city: details.city,
       pincode: details.pincode,
       role: USER_ROLE.CUSTOMER,
@@ -224,6 +225,7 @@ const upsertCustomer = async (mobile, details) => {
   */
   if (details.continent) existing.continent = details.continent;
   if (details.country) existing.country = details.country;
+  if (details.state) existing.state = details.state;
   if (details.city) existing.city = details.city;
   if (details.pincode) existing.pincode = details.pincode;
 
@@ -252,6 +254,7 @@ const upsertFranchise = async (mobile, details) => {
       panNumber: details.panNumber,
       continent: details.continent,
       country: details.country,
+      state: details.state,
       city: details.city,
       pincode: details.pincode,
       franchiseStatus: FRANCHISE_STATUS.NONE,
@@ -263,7 +266,7 @@ const upsertFranchise = async (mobile, details) => {
     if (!existing[field] && details[field]) existing[field] = details[field];
   };
 
-  ["name", "email", "dob", "panNumber", "continent", "country", "city", "pincode"].forEach(fillIfEmpty);
+  ["name", "email", "dob", "panNumber", "continent", "country", "state", "city", "pincode"].forEach(fillIfEmpty);
 
   return { account: existing, isNew: false };
 };
@@ -339,6 +342,7 @@ const buildResponse = ({ role, account, product }) => {
         panNumber: account.panNumber || "",
         continent: account.continent || "",
         country: account.country || "",
+        state: account.state || "",
         city: account.city || "",
         pincode: account.pincode || "",
         franchiseStatus: account.franchiseStatus || FRANCHISE_STATUS.NONE,
@@ -368,6 +372,7 @@ const buildResponse = ({ role, account, product }) => {
       panNumber: account.panNumber || "",
       continent: account.continent || "",
       country: account.country || "",
+      state: account.state || "",
       city: account.city || "",
       pincode: account.pincode || "",
       role: account.role,

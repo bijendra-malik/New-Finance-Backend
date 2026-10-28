@@ -24,6 +24,7 @@ const pendingDetailsSchema = new mongoose.Schema(
     /* Location captured by the entry form. */
     continent: { type: String, trim: true, default: "" },
     country: { type: String, trim: true, default: "" },
+    state: { type: String, trim: true, default: "" },
     city: { type: String, trim: true, default: "" },
     pincode: { type: String, trim: true, default: "" },
   },
