@@ -586,7 +586,7 @@ const startLogin = async ({ mobile } = {}) => {
 
   const account = await User.findOne({ mobile: number });
   if (!account) {
-    throw notFound("Customer not found. Please complete the loan entry form first.");
+    throw notFound("Customer not found. Please complete the loan entry form details.");
   }
   if (account.role === USER_ROLE.FRANCHISE) {
     throw badRequest("Franchise accounts must login with their franchise ID and password.");
