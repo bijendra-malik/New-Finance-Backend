@@ -257,7 +257,7 @@ describe("customerService.getCustomerProductApplication", () => {
     expect(error.message).toContain("Please wait");
     expect(error.retryAfter).toEqual(
       expect.objectContaining({
-        days: 29,
+        days: 2,
         availableAt: expect.any(String),
       })
     );

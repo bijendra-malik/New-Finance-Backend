@@ -442,7 +442,7 @@ describe("franchise loan apply", () => {
     expect(FranchiseCustomerLoanDraft.create).not.toHaveBeenCalled();
   });
 
-  it("blocks final submission of an existing franchise draft during the 30-day cooldown", async () => {
+  it("blocks final submission of an existing franchise draft during the 3-day cooldown", async () => {
     const customer = franchiseCustomerDoc({ isVerified: true });
     const account = {
       _id: "customer-account-id",
