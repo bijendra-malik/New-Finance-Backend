@@ -7,7 +7,15 @@ jest.mock("../src/modules/auth/user.model", () => {
   User.findOne = jest.fn();
   return User;
 });
-jest.mock("../src/modules/franchise/franchise.model", () => ({ findOne: jest.fn() }));
+jest.mock("../src/modules/franchise/franchise.model", () => {
+  const Franchise = jest.fn(function Franchise(data) {
+    Object.assign(this, data);
+    this._id = "franchise-id";
+    this.save = jest.fn().mockResolvedValue(this);
+  });
+  Franchise.findOne = jest.fn();
+  return Franchise;
+});
 jest.mock("../src/modules/loans/shared/loanModels", () => ({
   MODELS: {
     projectLoan: { exists: jest.fn() },
@@ -36,6 +44,7 @@ jest.mock("../src/modules/franchise/franchisePlan.service", () => ({}));
 jest.mock("../src/utils/sequence", () => ({ nextCustomerId: jest.fn().mockResolvedValue("CUST000001") }));
 
 const User = require("../src/modules/auth/user.model");
+const Franchise = require("../src/modules/franchise/franchise.model");
 const OTP = require("../src/modules/auth/otp.model");
 const sendOTP = require("../src/utils/sendOTP");
 const generateToken = require("../src/utils/generateToken");
@@ -102,6 +111,85 @@ describe("customer auth entry for existing applications", () => {
     expect(result.product).toBe("projectLoan");
     expect(hasRecentApplication).not.toHaveBeenCalled();
     expect(sendOTP).toHaveBeenCalledWith("9876543210", expect.any(String));
+  });
+
+  it("keeps franchise location fields in the pending OTP details", async () => {
+    const body = {
+      name: "Amit Verma",
+      email: "amit@example.com",
+      mobile: "9876543210",
+      dob: "1995-05-15",
+      panNumber: "ABCDE1234F",
+      continent: "Asia",
+      country: "India",
+      pincode: "110001",
+      state: "Delhi",
+      city: "New Delhi",
+      package: "Premium",
+    };
+
+    await startEntry({ role: USER_ROLE.FRANCHISE, body });
+
+    expect(OTP.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pendingDetails: expect.objectContaining({
+          continent: "Asia",
+          country: "India",
+          pincode: "110001",
+          state: "Delhi",
+          city: "New Delhi",
+        }),
+      })
+    );
+  });
+
+  it("saves franchise location fields after OTP verification and returns them", async () => {
+    OTP.findOne.mockResolvedValue({
+      mobile: "9876543210",
+      otp: "123456",
+      role: USER_ROLE.FRANCHISE,
+      createdAt: new Date(),
+      pendingDetails: {
+        name: "Amit Verma",
+        email: "amit@example.com",
+        mobile: "9876543210",
+        dob: new Date("1995-05-15"),
+        panNumber: "ABCDE1234F",
+        continent: "Asia",
+        country: "India",
+        pincode: "110001",
+        state: "Delhi",
+        city: "New Delhi",
+      },
+      pendingFranchise: { package: "Premium" },
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+    Franchise.findOne.mockResolvedValue(null);
+
+    const result = await verifyEntry({
+      mobile: "9876543210",
+      otp: "123456",
+      expectedRole: USER_ROLE.FRANCHISE,
+    });
+
+    expect(Franchise).toHaveBeenCalledWith(
+      expect.objectContaining({
+        continent: "Asia",
+        country: "India",
+        pincode: "110001",
+        state: "Delhi",
+        city: "New Delhi",
+      })
+    );
+    expect(result.user).toEqual(
+      expect.objectContaining({
+        continent: "Asia",
+        country: "India",
+        pincode: "110001",
+        state: "Delhi",
+        city: "New Delhi",
+      })
+    );
   });
 
   it("rejects entry mobile numbers that start with zero", async () => {

@@ -328,6 +328,11 @@ describe("franchise entry validator (planCode vs legacy package)", () => {
     mobile: "9876543222",
     dob: "1990-01-20",
     panNumber: "ABCDE1234F",
+    continent: "Asia",
+    country: "India",
+    pincode: "110001",
+    state: "Delhi",
+    city: "New Delhi",
   };
 
   it("accepts the new planCode payload", async () => {

@@ -71,6 +71,11 @@ describe("franchise validators", () => {
       mobile: "9876543222",
       dob: "1990-01-20",
       panNumber: "ABCDE1234F",
+      continent: "Asia",
+      country: "India",
+      pincode: "110001",
+      state: "Delhi",
+      city: "New Delhi",
     };
 
     // Galat PAN -> fail
@@ -82,6 +87,39 @@ describe("franchise validators", () => {
     expect((await runChain(franchiseEntryValidator, { ...base, package: "Premium" })).passed).toBe(true);
   });
 
+  it("requires complete current location details and a 6-digit pincode", async () => {
+    const base = {
+      name: "Amit Verma",
+      email: "amit@example.com",
+      mobile: "9876543222",
+      dob: "1990-01-20",
+      panNumber: "ABCDE1234F",
+      planCode: "3Y",
+      continent: "Asia",
+      country: "India",
+      pincode: "110001",
+      state: "Delhi",
+      city: "New Delhi",
+    };
+
+    expect((await runChain(franchiseEntryValidator, base)).passed).toBe(true);
+    expect(
+      (await runChain(franchiseEntryValidator, { ...base, continent: "" })).passed
+    ).toBe(false);
+    expect(
+      (await runChain(franchiseEntryValidator, { ...base, country: "" })).passed
+    ).toBe(false);
+    expect(
+      (await runChain(franchiseEntryValidator, { ...base, pincode: "12345" })).passed
+    ).toBe(false);
+    expect(
+      (await runChain(franchiseEntryValidator, { ...base, state: "" })).passed
+    ).toBe(false);
+    expect(
+      (await runChain(franchiseEntryValidator, { ...base, city: "" })).passed
+    ).toBe(false);
+  });
+
   it("rejects a franchise entry mobile number that starts with zero", async () => {
     const result = await runChain(franchiseEntryValidator, {
       name: "Amit Verma",
@@ -90,6 +128,11 @@ describe("franchise validators", () => {
       dob: "1990-01-20",
       panNumber: "ABCDE1234F",
       planCode: "3Y",
+      continent: "Asia",
+      country: "India",
+      pincode: "110001",
+      state: "Delhi",
+      city: "New Delhi",
     });
     expect(result.passed).toBe(false);
     expect(result.statusCode).toBe(400);
