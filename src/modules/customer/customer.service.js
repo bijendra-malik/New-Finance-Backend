@@ -237,7 +237,8 @@ const finalizeCustomerLoanDraft = async (customerId, draftId, customer, options 
  * application banti hi nahi, isliye admin ki Reject Loans list me kuch nahi
  * aata tha. Ye record usi gap ko bharta hai: kaun, kitna score, kya reason.
  *
- * Same 30-din TTL par delete hota hai jo rule-rejected applications par lagta hai.
+ * Rule-rejected applications are retained for 30 days for admin review; this
+ * is independent of the 3-day same-product application cooldown.
  */
 const recordCreditScoreRejection = async (account, result) =>
   CreditScoreRejection.create({

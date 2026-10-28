@@ -1,5 +1,5 @@
-/* Same customer cannot apply for the same product again within 30 days, regardless of channel. */
-const APPLICATION_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+/* Same customer cannot apply for the same product again within 3 days, regardless of channel. */
+const APPLICATION_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 const hasRecentApplication = async (Model, userId) =>
   Model.findOne({

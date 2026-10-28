@@ -21,9 +21,9 @@ const { APPLICATION_COOLDOWN_MS } = require("../loans/shared/loanApplicationCool
 const MIN_CREDIT_SCORE = 600;
 
 /*
-Rejection ke baad customer ko ye bhi batna hai ki wo kab dobara apply kar
-sakta hai — window wahi hai jo re-apply block karti hai
-(loanApplicationCooldown: 30 din), isliye dono ek jagah se aate hain.
+Rejection ke baad customer ko ye bhi batana hai ki wo kab dobara apply kar
+sakta hai — window wahi hai jo re-apply block karti hai, isliye dono ek jagah
+se aate hain.
 */
 const REAPPLY_AFTER_DAYS = Math.round(APPLICATION_COOLDOWN_MS / (24 * 60 * 60 * 1000));
 

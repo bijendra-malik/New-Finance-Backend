@@ -25,8 +25,9 @@ Har non-auto row par `rejectedBy` hota hai — kaun se admin ne reject kiya
 (`approvedBy` id ka naam), rule-based rows par nahi.
 
 `autoRejectedAt` wale records 30 din baad MongoDB TTL se apne aap delete ho
-jaate hain (customer tab tak 30-din cooldown me hai), isliye yahan sirf jo
-bachhe hain wo aate hain.
+jaate hain. Ye admin review ke liye retention hai; same-product reapply
+cooldown 3 din ka hai. Isliye yahan sirf jo records abhi tak retain hain wahi
+aate hain.
 ==========================================
 */
 
