@@ -1,10 +1,9 @@
-/* Rule-based rejection ke baad customer 30 din tak usi product par dobara apply nahi kar sakta. */
+/* Same customer cannot apply for the same product again within 30 days, regardless of channel. */
 const APPLICATION_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
-const hasRecentDirectApplication = async (Model, userId) =>
+const hasRecentApplication = async (Model, userId) =>
   Model.findOne({
     user: userId,
-    franchise: null,
     createdAt: { $gt: new Date(Date.now() - APPLICATION_COOLDOWN_MS) },
   })
     .sort({ createdAt: -1 })
@@ -46,6 +45,6 @@ const createApplicationCooldownError = (application, loanType, now = new Date())
 
 module.exports = {
   APPLICATION_COOLDOWN_MS,
-  hasRecentDirectApplication,
+  hasRecentApplication,
   createApplicationCooldownError,
 };

@@ -39,7 +39,8 @@ router.post("/verify-otp", otpVerifyLimiter, verifyOtpValidator, authController.
 Existing customer login (phone + OTP). Naya account nahi banta; login token
 product-locked nahi hota, isliye credit score check ke baad koi bhi loan apply
 ho sakta hai. OTP verification selected product ke 30-day repeat-application
-cooldown ko check karti hai.
+cooldown ko check karti hai. Ye cooldown direct aur franchise applications
+dono par lagu hai.
 */
 router.post("/login/request-otp", otpRequestLimiter, loginRequestValidator, authController.loginRequestOtp);
 router.post(

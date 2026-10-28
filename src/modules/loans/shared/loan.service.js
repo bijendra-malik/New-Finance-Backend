@@ -1,7 +1,7 @@
 const { LOAN_PRODUCTS } = require("./loanProducts");
 const { MODELS } = require("./loanModels");
 const {
-  hasRecentDirectApplication,
+  hasRecentApplication,
   createApplicationCooldownError,
 } = require("./loanApplicationCooldown");
 const { createLoanApplicationWithLimit } = require("./loanApplicationLimit");
@@ -135,8 +135,8 @@ const unwrap = (body) =>
 const supportsTransactionBanks = (employmentType) =>
   incomeFieldNamesForEmploymentType(employmentType).includes("transactionBankName");
 
-const assertNoExistingDirectApplication = async (Model, userId) => {
-  const existingApplication = await hasRecentDirectApplication(Model, userId);
+const assertNoRecentApplication = async (Model, userId) => {
+  const existingApplication = await hasRecentApplication(Model, userId);
   if (existingApplication) {
     throw createApplicationCooldownError(existingApplication, "this loan product");
   }
@@ -384,7 +384,7 @@ const createLoanController = (productKey) => {
         // Final submit gate: company-type policy + credit score (600+ + window active).
         const reason = loanEligibilityRejectionReason(productKey, req.body, account);
 
-        await assertNoExistingDirectApplication(Model, req.user.id);
+        await assertNoRecentApplication(Model, req.user.id);
         const applicationNo = await nextLoanApplicationNo();
 
         /*
@@ -451,5 +451,5 @@ module.exports = {
   buildLoanDocument,
   sanitizeLoanResponse,
   compactLoanResponse,
-  assertNoExistingDirectApplication,
+  assertNoRecentApplication,
 };

@@ -10,7 +10,11 @@ const generateToken = require("../../utils/generateToken");
 const { nextLoanApplicationNo, nextCustomerId } = require("../../utils/sequence");
 const { MODELS } = require("../loans/shared/loanModels");
 const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
-const { buildLoanDocument, sanitizeLoanResponse } = require("../loans/shared/loan.service");
+const {
+  buildLoanDocument,
+  sanitizeLoanResponse,
+  assertNoRecentApplication,
+} = require("../loans/shared/loan.service");
 const { creditSnapshot } = require("../customer/credit.service");
 const { loanEligibilityRejectionReason } = require("../loans/shared/loanEligibility");
 const { createLoanApplicationWithLimit } = require("../loans/shared/loanApplicationLimit");
@@ -235,7 +239,8 @@ const createFranchiseLoanDraft = async (franchise, body = {}) => {
   }
 
   const applicant = applicantFromCustomer(franchiseCustomer, payload);
-  await resolveCustomerAccount(franchiseCustomer, applicant.email);
+  const customerAccount = await resolveCustomerAccount(franchiseCustomer, applicant.email);
+  await assertNoRecentApplication(MODELS[product], customerAccount._id);
   await FranchiseCustomerLoanDraft.ensureExpiryIndex();
 
   const existingDraft = await FranchiseCustomerLoanDraft.findOne({
@@ -326,6 +331,7 @@ const cancelFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer) =>
 const finalizeFranchiseCustomerLoanDraft = async (franchise, franchiseCustomer, draft, customer, options = {}) => {
   const product = cleanText(draft.product);
   if (!LOAN_PRODUCTS[product] || !MODELS[product]) throw badRequest("A valid loan product is required");
+  await assertNoRecentApplication(MODELS[product], customer._id);
 
   // Final submit gate: company-type policy + credit score (600+ + window).
   /*

@@ -15,7 +15,7 @@ const {
   buildLoanDocument,
   sanitizeLoanResponse,
   compactLoanResponse,
-  assertNoExistingDirectApplication,
+  assertNoRecentApplication,
 } = require("../loans/shared/loan.service");
 
 const LOAN_DRAFT_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -120,7 +120,7 @@ const createCustomerLoanDraft = async (customerId, body = {}, account = null) =>
   const product = resolveProduct(payload);
   const customer = account || (await User.findById(customerId));
   if (!customer) throw notFound(ACCOUNT_NOT_FOUND_MESSAGE);
-  await assertNoExistingDirectApplication(MODELS[product], customerId);
+  await assertNoRecentApplication(MODELS[product], customerId);
   // Each customer can have only one active form draft; a new submission replaces it.
   const draft = await CustomerLoanDraft.findOneAndUpdate(
     { user: customerId },
@@ -210,7 +210,7 @@ const finalizeCustomerLoanDraft = async (customerId, draftId, customer, options 
   */
   const reason =
     options.forcedReason || loanEligibilityRejectionReason(product, draft.payload, customer);
-  await assertNoExistingDirectApplication(MODELS[product], customerId);
+  await assertNoRecentApplication(MODELS[product], customerId);
 
   const applicationNo = await nextLoanApplicationNo();
   const document = buildLoanDocument(product, draft.payload, customerId, {

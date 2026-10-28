@@ -10,7 +10,7 @@ const { LOAN_PRODUCTS } = require("../loans/shared/loanProducts");
 const { MODELS } = require("../loans/shared/loanModels");
 const { MOBILE_PATTERN } = require("../loans/shared/helpers");
 const {
-  hasRecentDirectApplication,
+  hasRecentApplication,
   createApplicationCooldownError,
 } = require("../loans/shared/loanApplicationCooldown");
 const { USER_ROLE, FRANCHISE_STATUS } = require("../../constants/roles");
@@ -634,7 +634,7 @@ const verifyLogin = async ({ mobile, otp, product } = {}) => {
     throw badRequest("Franchise accounts must login with their franchise ID and password.");
   }
 
-  const recentApplication = await hasRecentDirectApplication(
+  const recentApplication = await hasRecentApplication(
     MODELS[selectedProduct],
     account._id
   );
