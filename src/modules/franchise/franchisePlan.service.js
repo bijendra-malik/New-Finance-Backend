@@ -25,7 +25,7 @@ Derived fields (kabhi store nahi hote):
   gstAmount               fee * gstPercent / 100
   totalWithGst            fee + gstAmount
   effectiveMonthlyCost    fee / durationMonths   <- "lowest effective monthly cost"
-  renewalText             "₹3,900" ya "As applicable"
+  renewalText             "₹4,999" ya "As applicable"
 ==========================================
 */
 
@@ -513,7 +513,7 @@ const DEFAULT_PLANS = [
     name: "3-Year Plan",
     durationMonths: 36,
     fee: 249000,
-    renewalFee: 3900,
+    renewalFee: 4999,
     features: ["Franchise access for 3 years"],
     isBestValue: true,
     sortOrder: 1,
@@ -523,7 +523,7 @@ const DEFAULT_PLANS = [
     name: "Annual Plan",
     durationMonths: 12,
     fee: 119000,
-    renewalFee: null,
+    renewalFee: 4999,
     features: ["Franchise access for 1 year"],
     isBestValue: false,
     sortOrder: 2,
@@ -533,7 +533,7 @@ const DEFAULT_PLANS = [
     name: "6-Month Plan",
     durationMonths: 6,
     fee: 89000,
-    renewalFee: null,
+    renewalFee: 4999,
     features: ["Franchise access for 6 months"],
     isBestValue: false,
     sortOrder: 3,
@@ -543,7 +543,7 @@ const DEFAULT_PLANS = [
     name: "Quarterly Plan",
     durationMonths: 3,
     fee: 59000,
-    renewalFee: null,
+    renewalFee: 4999,
     features: ["Franchise access for 3 months"],
     isBestValue: false,
     sortOrder: 4,
@@ -553,7 +553,7 @@ const DEFAULT_PLANS = [
     name: "Monthly Plan",
     durationMonths: 1,
     fee: 24000,
-    renewalFee: null,
+    renewalFee: 4999,
     features: ["Franchise access for 1 month"],
     isBestValue: false,
     sortOrder: 5,

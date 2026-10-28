@@ -119,7 +119,7 @@ describe("franchise plan derived fields", () => {
   });
 
   it("renders renewalText from the fixed fee, else from the note", () => {
-    expect(withDerivedFields(planDoc({ renewalFee: 3900 })).renewalText).toBe("₹3,900");
+    expect(withDerivedFields(planDoc({ renewalFee: 4999 })).renewalText).toBe("₹4,999");
     expect(withDerivedFields(planDoc({ renewalFee: null })).renewalText).toBe("As applicable");
   });
 });
@@ -160,16 +160,12 @@ describe("franchise plan seed data (what the /franchise page shows)", () => {
     expect(DEFAULT_PLANS.filter((plan) => plan.isBestValue).map((plan) => plan.code)).toEqual(["3Y"]);
   });
 
-  it("gives only the 3-year plan a fixed renewal fee", () => {
+  it("sets the fixed renewal fee to ₹4,999 for every default plan", () => {
     const byCode = Object.fromEntries(DEFAULT_PLANS.map((plan) => [plan.code, plan]));
 
-    expect(byCode["3Y"].renewalFee).toBe(3900);
-    expect(byCode["3Y"].renewalText).toBeUndefined(); // raw seed data — derived later
-    expect(withDerivedFields(byCode["3Y"]).renewalText).toBe("₹3,900");
-
-    ["1Y", "6M", "3M", "1M"].forEach((code) => {
-      expect(byCode[code].renewalFee).toBeNull();
-      expect(withDerivedFields(byCode[code]).renewalText).toBe("As applicable");
+    DEFAULT_PLANS.forEach((plan) => {
+      expect(plan.renewalFee).toBe(4999);
+      expect(withDerivedFields(plan).renewalText).toBe("₹4,999");
     });
   });
 });
@@ -300,6 +296,16 @@ describe("franchise plan admin validators", () => {
   it("allows renewalFee to be sent as null (no fixed renewal fee)", async () => {
     const result = await runChain(createPlanValidator, { ...validPayload, renewalFee: null });
     expect(result.passed).toBe(true);
+  });
+
+  it("accepts a manually entered renewal fee on create and update", async () => {
+    const createResult = await runChain(createPlanValidator, { ...validPayload, renewalFee: "4999" });
+    const updateResult = await runChain(updatePlanValidator, { renewalFee: "7500" });
+
+    expect(createResult.passed).toBe(true);
+    expect(createResult.body.renewalFee).toBe(4999);
+    expect(updateResult.passed).toBe(true);
+    expect(updateResult.body.renewalFee).toBe(7500);
   });
 
   it("lets an update change just the fee", async () => {

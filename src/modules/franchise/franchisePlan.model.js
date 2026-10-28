@@ -76,7 +76,7 @@ const franchisePlanSchema = new mongoose.Schema(
 
     /*
     Renewal do tarah ka hota hai, isliye dono fields hain:
-      - renewalFee  : fixed amount (3-year plan ka ₹3,900)
+      - renewalFee  : fixed amount (default plans ka ₹4,999)
       - renewalNote : agar amount fix nahi hai to text ("As applicable")
     Service `renewalText` deta hai jo UI seedha dikha sakta hai.
     */
