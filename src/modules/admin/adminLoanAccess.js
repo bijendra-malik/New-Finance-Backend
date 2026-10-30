@@ -32,10 +32,10 @@ const hasProductAccess = (admin, productKey) => {
 };
 
 /*
-A restricted admin ko apne assigned product ka POORA kaam dikhta hai —
-Submitted, Pending, Approved aur Rejected sab. Product access pehle hi
-`requireLoanAccess` se enforce hota hai, isliye yahan status par koi bandish
-nahi lagti.
+A restricted admin ko apne assigned product ke direct customer applications
+dikhte hain — Submitted, Pending, Approved aur Rejected sab. Franchise-origin
+applications franchise ke separate workflow me rehte hain, so only SuperAdmin
+can see them through the general product endpoints.
 
 Pehle yahan `status: { $ne: "Rejected" }` laga hua tha, jiski wajah se:
   - admin ko apne hi product ki rejected applications list me dikhti hi nahi
@@ -45,8 +45,7 @@ Pehle yahan `status: { $ne: "Rejected" }` laga hua tha, jiski wajah se:
 Ab status sirf data ka hissa hai, chhupane ki wajah nahi.
 */
 const visibleLoanFilter = (admin, filter = {}) => {
-  void admin;
-  return filter;
+  return isSuperAdmin(admin) ? filter : { ...filter, franchise: null };
 };
 
 const requireLoanAccess = (productKey) => (req, res, next) => {

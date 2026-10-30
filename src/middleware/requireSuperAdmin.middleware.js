@@ -33,7 +33,7 @@ module.exports = async (req, res, next) => {
     if (admin.role !== "SuperAdmin") {
       return res.status(403).json({
         success: false,
-        message: "Only a super admin can manage the admin team",
+        message: "Only a super admin can access this resource",
       });
     }
 
