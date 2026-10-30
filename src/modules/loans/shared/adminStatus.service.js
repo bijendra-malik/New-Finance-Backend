@@ -16,6 +16,7 @@ decision stamps approvedBy/approvedAt (or rejectedAt) + adminNote.
 */
 
 const { MODELS, SETTABLE_STATUSES, canTransition } = require("./loanStatus");
+const { hasProductAccess, visibleLoanFilter } = require("../../admin/adminLoanAccess");
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -120,7 +121,7 @@ const getListHandler = (resource) => async (req, res, next) => {
     const Model = modelFor(resource);
     if (!Model) throw notFound("Unknown application type");
 
-    const applications = await Model.find().sort({ createdAt: -1 });
+    const applications = await Model.find(visibleLoanFilter(req.admin)).sort({ createdAt: -1 });
     res.status(200).json({ success: true, loans: applications });
   } catch (error) {
     next(error);
@@ -136,7 +137,9 @@ const getByIdHandler = (resource) => async (req, res, next) => {
     if (!isValidObjectId(req.params.id))
       throw notFound("Application not found");
 
-    const application = await Model.findById(req.params.id);
+    const application = await Model.findOne(
+      visibleLoanFilter(req.admin, { _id: req.params.id })
+    );
     if (!application)
       throw notFound(`${labelFor(resource)} application not found`);
 
@@ -159,7 +162,9 @@ const deleteApplicationHandler = (resource) => async (req, res, next) => {
     if (!isValidObjectId(req.params.id))
       throw notFound("Application not found");
 
-    const application = await Model.findById(req.params.id);
+    const application = await Model.findOne(
+      visibleLoanFilter(req.admin, { _id: req.params.id })
+    );
     if (!application)
       throw notFound(`${labelFor(resource)} application not found`);
 
@@ -207,7 +212,9 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
     if (!isValidObjectId(req.params.id))
       throw notFound("Application not found");
 
-    const application = await Model.findById(req.params.id);
+    const application = await Model.findOne(
+      visibleLoanFilter(req.admin, { _id: req.params.id })
+    );
     if (!application)
       throw notFound(`${labelFor(resource)} application not found`);
 
@@ -274,13 +281,18 @@ const listCustomerApplications = async (req, res, next) => {
     }
 
     const groups = await Promise.all(
-      Object.entries(MODELS).map(async ([productKey, Model]) => {
-        const applications = await Model.find({ user: customerId }).sort({
+      Object.entries(RESOURCE_ROUTES)
+        .filter(([, entry]) => hasProductAccess(req.admin, entry.productKey))
+        .map(async ([, entry]) => {
+        const Model = MODELS[entry.productKey];
+        const applications = await Model.find(
+          visibleLoanFilter(req.admin, { user: customerId })
+        ).sort({
           createdAt: -1,
         });
         if (!applications.length) return null;
         return {
-          product: productKey,
+          product: entry.productKey,
           count: applications.length,
           applications,
         };

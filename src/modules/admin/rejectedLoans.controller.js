@@ -35,6 +35,7 @@ const { MODELS } = require("../loans/shared/loanStatus");
 const CreditScoreRejection = require("../customer/creditScoreRejection.model");
 const Franchise = require("../franchise/franchise.model");
 const Admin = require("./admin.model");
+const { hasProductAccess, isSuperAdmin } = require("./adminLoanAccess");
 
 /** Score-only rejections ka label (koi loan product nahi hota). */
 const CREDIT_SCORE_LABEL = "Credit Score";
@@ -51,8 +52,13 @@ const MAX_PER_PRODUCT = 200;
 
 exports.list = async (req, res, next) => {
   try {
+    const superAdmin = isSuperAdmin(req.admin);
+
     const groups = await Promise.all(
       Object.entries(RESOURCE_ROUTES).map(async ([resource, entry]) => {
+        // Restricted admin ko sirf apne assigned products ki rejections.
+        if (!hasProductAccess(req.admin, entry.productKey)) return [];
+
         const Model = MODELS[entry.productKey];
         if (!Model) return [];
 
@@ -79,11 +85,15 @@ exports.list = async (req, res, next) => {
     Score-only rejections: customer ne credit score to daala par loan form
     submit nahi hua (ya draft expire ho gaya), isliye koi loan document nahi
     bani. Inhe bhi list me dikhate hain, warna admin ko pata hi nahi chalta.
+    Koi product inke saath juda nahi hai, isliye sirf super admin ko dikhte
+    hain — restricted admin ka scope uske assigned products tak hi rehta hai.
     */
-    const scoreRejections = await CreditScoreRejection.find({})
-      .sort({ createdAt: -1 })
-      .limit(MAX_PER_PRODUCT)
-      .lean();
+    const scoreRejections = superAdmin
+      ? await CreditScoreRejection.find({})
+          .sort({ createdAt: -1 })
+          .limit(MAX_PER_PRODUCT)
+          .lean()
+      : [];
 
     const scoreRows = scoreRejections.map((doc) => ({
       ...doc,
@@ -97,11 +107,13 @@ exports.list = async (req, res, next) => {
     }));
 
     /* Franchise ki khud ki application admin ne reject ki — loan nahi hai. */
-    const rejectedFranchises = await Franchise.find({ franchiseStatus: "Rejected" })
-      .sort({ franchiseRejectedAt: -1 })
-      .limit(MAX_PER_PRODUCT)
-      .select({ name: 1, mobile: 1, email: 1, panNumber: 1, franchiseRejectedAt: 1, createdAt: 1 })
-      .lean();
+    const rejectedFranchises = superAdmin
+      ? await Franchise.find({ franchiseStatus: "Rejected" })
+          .sort({ franchiseRejectedAt: -1 })
+          .limit(MAX_PER_PRODUCT)
+          .select({ name: 1, mobile: 1, email: 1, panNumber: 1, franchiseRejectedAt: 1, createdAt: 1 })
+          .lean()
+      : [];
 
     const franchiseRows = rejectedFranchises.map((doc) => ({
       _id: doc._id,
