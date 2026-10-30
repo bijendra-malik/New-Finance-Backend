@@ -34,15 +34,23 @@ const otpVerifyLimiter = rateLimit({
   },
 });
 
-// Admin password login — brute-force protection.
+/*
+Admin password login — brute-force protection.
+
+Sirf FAILED attempts gine jaate hain (`skipSuccessfulRequests`): sahi password
+se login karne par counter wapas kam ho jata hai, isliye team testing / baar
+baar login karna kabhi block nahi hota — par galat password guess karne par
+10 attempts ke baad 15 minute ka lockout pehle jaisa hi rehta hai.
+*/
 const adminLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     success: false,
-    message: "Too many login attempts. Please try again later.",
+    message: "Too many login attempts. Please try again in a few minutes.",
   },
 });
 
