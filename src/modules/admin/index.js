@@ -12,6 +12,13 @@ and kept isolated from the public/user-facing API.
 
 router.use("/auth", require("./adminAuth.routes"));
 
+/*
+Admin team (super admin only) — naye admin logins + unka loan access.
+"/" wale application router se PEHLE mount hota hai, warna "/admins"
+wahan 404 ho jata.
+*/
+router.use("/admins", require("./adminUser.routes"));
+
 router.use("/", adminAuth, require("./application.routes"));
 
 /*
