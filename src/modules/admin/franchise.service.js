@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 
 const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
+const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
+const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
 const { nextFranchiseCode } = require("../../utils/sequence");
 const {
   FRANCHISE_STATUS,
@@ -204,24 +206,34 @@ const resetFranchisePassword = async (id) => {
 };
 
 /** How many applications were filed through this franchise, across all products. */
-const countFranchiseLoans = async (franchiseObjectId) => {
+const countFranchiseLoans = async (franchiseObjectId, admin) => {
   const counts = await Promise.all(
-    Object.values(MODELS).map((Model) => Model.countDocuments({ franchise: franchiseObjectId }))
+    Object.values(RESOURCE_ROUTES)
+      .filter((entry) => hasProductAccess(admin, entry.productKey))
+      .map((entry) =>
+        MODELS[entry.productKey].countDocuments(
+          visibleLoanFilter(admin, { franchise: franchiseObjectId })
+        )
+      )
   );
 
   return counts.reduce((sum, count) => sum + count, 0);
 };
 
 /** All applications filed through this franchise, grouped per product. */
-const listFranchiseLoans = async (id) => {
+const listFranchiseLoans = async (id, admin) => {
   const franchise = await getFranchiseById(id);
 
   const groups = await Promise.all(
-    Object.entries(MODELS).map(async ([productKey, Model]) => {
-      const applications = await Model.find({ franchise: franchise._id }).sort({ createdAt: -1 });
+    Object.values(RESOURCE_ROUTES)
+      .filter((entry) => hasProductAccess(admin, entry.productKey))
+      .map(async (entry) => {
+      const applications = await MODELS[entry.productKey]
+        .find(visibleLoanFilter(admin, { franchise: franchise._id }))
+        .sort({ createdAt: -1 });
       if (!applications.length) return null;
       return {
-        product: productKey,
+        product: entry.productKey,
         count: applications.length,
         applications,
       };

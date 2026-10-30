@@ -42,7 +42,7 @@ exports.getOne = async (req, res, next) => {
   try {
     const franchise = await franchiseService.getFranchiseById(req.params.id);
     // How many loans this franchise has filed — a single call for the admin.
-    const loanCount = await franchiseService.countFranchiseLoans(franchise._id);
+    const loanCount = await franchiseService.countFranchiseLoans(franchise._id, req.admin);
 
     res.json({
       success: true,
@@ -122,7 +122,7 @@ GET /api/admin/franchises/:id/loans
 */
 exports.loans = async (req, res, next) => {
   try {
-    const result = await franchiseService.listFranchiseLoans(req.params.id);
+    const result = await franchiseService.listFranchiseLoans(req.params.id, req.admin);
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);
