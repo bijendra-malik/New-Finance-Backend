@@ -437,14 +437,18 @@ const customerSummary = (customer) => ({
  * Scoping do taraf se: loan par `franchiseCustomer` = ye customer, aur
  * `franchise` = calling franchise.
  */
-const listCustomerLoans = async (franchise, id) => {
+const listCustomerLoans = async (franchise, id, { productKeys, includeRejected = true } = {}) => {
   const customer = await getCustomerDoc(franchise, id);
 
   const groups = await Promise.all(
-    Object.entries(MODELS).map(async ([productKey, Model]) => {
-      const applications = await Model.find({ franchiseCustomer: customer._id, franchise: franchise._id }).sort({
-        createdAt: -1,
-      });
+    Object.entries(MODELS)
+      .filter(([productKey]) => !productKeys || productKeys.includes(productKey))
+      .map(async ([productKey, Model]) => {
+      const filter = { franchiseCustomer: customer._id, franchise: franchise._id };
+      if (!includeRejected) {
+        filter.status = { $ne: "Rejected" };
+      }
+      const applications = await Model.find(filter).sort({ createdAt: -1 });
       if (!applications.length) return null;
 
       return {
