@@ -6,6 +6,7 @@ const sendEmail = require("../../utils/sendEmail");
 const { otpEmailTemplate } = require("../../utils/emailTemplates");
 const { isValidEmail, isStrongPassword } = require("../../utils/validators");
 const { freshOtp } = require("../../utils/otp");
+const { LOAN_ACCESS_ALL } = require("../../constants/loanTypes");
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -23,7 +24,21 @@ Throws an error with a statusCode when auth fails.
 ==========================================
 */
 const authenticateAdmin = async (email, password) => {
-  const admin = await Admin.findOne({ email: email.toLowerCase().trim() }).select("+password");
+  /*
+  `email` me email ya admin ID (loginId) dono aa sakte hain — super admin naye
+  admins ko `admin02` jaisi ID deta hai. `@` na ho to loginId se dhoondte hain,
+  aur purane accounts (jinme loginId store nahi hai) ke liye email bhi try karte hain.
+  */
+  const identifier = String(email ?? "").toLowerCase().trim();
+  const isEmail = identifier.includes("@");
+
+  let admin = await Admin.findOne(
+    isEmail ? { email: identifier } : { loginId: identifier }
+  ).select("+password");
+
+  if (!admin && !isEmail) {
+    admin = await Admin.findOne({ email: identifier }).select("+password");
+  }
 
   if (!admin) {
     const error = new Error("Invalid email or password");
@@ -52,6 +67,8 @@ const authenticateAdmin = async (email, password) => {
 
   const safeAdmin = admin.toObject();
   delete safeAdmin.password;
+  safeAdmin.loanAccess =
+    admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
 
   return { token, admin: safeAdmin };
 };
@@ -65,6 +82,7 @@ const getAdminById = async (id) => {
     throw error;
   }
 
+  admin.loanAccess = admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
   return admin;
 };
 
@@ -218,6 +236,7 @@ const updateProfile = async (adminId, { name, email }) => {
   admin.email = cleanEmail;
   await admin.save();
 
+  admin.loanAccess = admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
   return admin;
 };
 
