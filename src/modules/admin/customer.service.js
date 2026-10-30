@@ -58,7 +58,9 @@ const listCustomers = async ({ search, page, limit, isActive } = {}) => {
 const getCustomerById = async (id) => {
   if (!mongoose.isValidObjectId(id)) throw notFound("Customer not found");
   const customer = await User.findById(id);
-  if (!customer) throw notFound("Customer not found");
+  if (!customer || customer.role === USER_ROLE.FRANCHISE) {
+    throw notFound("Customer not found");
+  }
   return customer;
 };
 

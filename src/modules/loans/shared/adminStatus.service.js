@@ -259,6 +259,7 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
 };
 
 const User = require("../../auth/user.model");
+const { USER_ROLE } = require("../../../constants/roles");
 
 /**
  * GET /api/admin/customers/:id/applications
@@ -274,7 +275,7 @@ const listCustomerApplications = async (req, res, next) => {
     }
 
     const customer = await User.findById(customerId);
-    if (!customer) {
+    if (!customer || customer.role === USER_ROLE.FRANCHISE) {
       return res
         .status(404)
         .json({ success: false, message: "Customer not found" });
