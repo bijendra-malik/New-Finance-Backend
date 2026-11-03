@@ -1,6 +1,7 @@
 const router = require("express").Router();
 
 const franchiseController = require("./franchise.controller");
+const requireSuperAdmin = require("../../middleware/requireSuperAdmin.middleware");
 
 /*
 ==========================================
@@ -18,9 +19,9 @@ Admin franchise routes — mounted at /api/admin/franchises
 
 router.get("/", franchiseController.list);
 router.get("/:id", franchiseController.getOne);
-router.patch("/:id/approve", franchiseController.approve);
-router.patch("/:id/reject", franchiseController.reject);
-router.patch("/:id/reset-password", franchiseController.resetPassword);
-router.get("/:id/loans", franchiseController.loans);
+router.patch("/:id/approve", requireSuperAdmin, franchiseController.approve);
+router.patch("/:id/reject", requireSuperAdmin, franchiseController.reject);
+router.patch("/:id/reset-password", requireSuperAdmin, franchiseController.resetPassword);
+router.get("/:id/loans", requireSuperAdmin, franchiseController.loans);
 
 module.exports = router;

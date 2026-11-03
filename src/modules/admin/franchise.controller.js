@@ -41,15 +41,20 @@ GET /api/admin/franchises/:id
 exports.getOne = async (req, res, next) => {
   try {
     const franchise = await franchiseService.getFranchiseById(req.params.id);
-    // How many loans this franchise has filed — a single call for the admin.
-    const loanCount = await franchiseService.countFranchiseLoans(franchise._id, req.admin);
+    const isSuperAdmin = req.admin?.role === "SuperAdmin";
+    const loanCount = isSuperAdmin
+      ? await franchiseService.countFranchiseLoans(franchise._id, req.admin)
+      : undefined;
 
     res.json({
       success: true,
-      // Login ID + first password (the PAN number) so the admin can re-share them later.
-      // null until the application has been approved.
-      credentials: franchiseService.buildCredentials(franchise),
-      loanCount,
+      ...(isSuperAdmin
+        ? {
+            // Credentials and loan totals are restricted to Super Admins.
+            credentials: franchiseService.buildCredentials(franchise),
+            loanCount,
+          }
+        : {}),
       franchise,
     });
   } catch (error) {
