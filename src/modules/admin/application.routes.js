@@ -5,11 +5,13 @@ const {
   getListHandler,
   getByIdHandler,
   updateStatusHandler,
+  addUpdateHandler,
   deleteApplicationHandler,
 } = require("../loans/shared/adminStatus.service");
 const dashboardController = require("./dashboard.controller");
 const rejectedLoansController = require("./rejectedLoans.controller");
 const { requireLoanAccess } = require("./adminLoanAccess");
+const requireSuperAdmin = require("../../middleware/requireSuperAdmin.middleware");
 
 /*
 ==========================================
@@ -24,7 +26,9 @@ Object.keys(RESOURCE_ROUTES).forEach((resource) => {
   router.get(`/${resource}`, access, getListHandler(resource));
   router.get(`/${resource}/:id`, access, getByIdHandler(resource));
   router.patch(`/${resource}/:id/status`, access, updateStatusHandler(resource));
-  router.delete(`/${resource}/:id`, access, deleteApplicationHandler(resource));
+  router.post(`/${resource}/:id/updates`, access, addUpdateHandler(resource));
+  router.patch(`/${resource}/:id/updates`, access, addUpdateHandler(resource));
+  router.delete(`/${resource}/:id`, access, requireSuperAdmin, deleteApplicationHandler(resource));
 });
 
 /* Dashboard stats (replaces the frontend's 15-request fan-out). */
