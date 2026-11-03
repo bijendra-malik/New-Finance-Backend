@@ -3,7 +3,7 @@ const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanStatus");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { USER_ROLE } = require("../../constants/roles");
-const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
+const { hasProductAccess, isSuperAdmin, visibleLoanFilter } = require("./adminLoanAccess");
 
 /*
 ==========================================
@@ -21,8 +21,8 @@ const stats = async (req, res, next) => {
     const [totalCustomers, totalFranchises, products, recentRaw] = await Promise.all([
       // Customers = users collection (legacy franchise docs bhi excluded).
       User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE } }),
-      // Franchises apni collection me hain.
-      Franchise.countDocuments(),
+      // Franchise totals are only included in the Super Admin dashboard.
+      isSuperAdmin(req.admin) ? Franchise.countDocuments() : Promise.resolve(null),
       Promise.all(
         Object.entries(RESOURCE_ROUTES)
           .filter(([, entry]) => hasProductAccess(req.admin, entry.productKey))
@@ -123,7 +123,7 @@ const stats = async (req, res, next) => {
       success: true,
       stats: {
         totalCustomers,
-        totalFranchises,
+        ...(isSuperAdmin(req.admin) ? { totalFranchises } : {}),
         totalApplications: totals.totalApplications,
         submitted: totals.submitted,
         pending: totals.pending,

@@ -35,7 +35,7 @@ const { MODELS } = require("../loans/shared/loanStatus");
 const CreditScoreRejection = require("../customer/creditScoreRejection.model");
 const Franchise = require("../franchise/franchise.model");
 const Admin = require("./admin.model");
-const { hasProductAccess, isSuperAdmin } = require("./adminLoanAccess");
+const { hasProductAccess, isSuperAdmin, visibleLoanFilter } = require("./adminLoanAccess");
 
 /** Score-only rejections ka label (koi loan product nahi hota). */
 const CREDIT_SCORE_LABEL = "Credit Score";
@@ -62,7 +62,9 @@ exports.list = async (req, res, next) => {
         const Model = MODELS[entry.productKey];
         if (!Model) return [];
 
-        const documents = await Model.find({ status: "Rejected" })
+        const documents = await Model.find(
+          visibleLoanFilter(req.admin, { status: "Rejected" })
+        )
           .sort({ createdAt: -1 })
           .limit(MAX_PER_PRODUCT)
           .lean();
