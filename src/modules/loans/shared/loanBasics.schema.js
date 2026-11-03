@@ -31,10 +31,8 @@ const SERVER_MANAGED_FIELD_NAMES = [
   "creditScoreCheckedAt",
   "creditEligible",
   "creditEligibilityExpiresAt",
-];
-
-/** Set by the admin panel (PATCH /{resource}/:id/status), never by an applicant. */
-const ADMIN_REVIEW_FIELD_NAMES = ["approvedBy", "approvedAt", "rejectedAt", "adminNote", "autoRejectedAt"];
+];/** Set by the admin panel (PATCH /{resource}/:id/status), never by an applicant. */
+const ADMIN_REVIEW_FIELD_NAMES = ["approvedBy", "approvedAt", "rejectedAt", "adminNote", "autoRejectedAt", "adminUpdates", "statusRecommendation"];
 
 /** Mongoose field objects shared by every loan product's schema. */
 const ADMIN_REVIEW_FIELDS = {
@@ -44,9 +42,39 @@ const ADMIN_REVIEW_FIELDS = {
   adminNote: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
   /*
   Rule-based rejection (eligibility gate) ka timestamp — sirf auto-rejected documents par set hota hai. Isi field par TTL index lagta hai (3 din),
-  taaki wo record apne aap DB se remove ho jaye. Admin ke manual rejection  par ye null rehta hai — uska record kabhi delete nahi hota.
+  taaki wo record apne aap DB se remove ho jaye. Admin ke manual rejection
+  par ye null rehta hai — uska record kabhi delete nahi hota.
   */
   autoRejectedAt: { type: Date, default: null },
+  /*
+  Latest status suggested by a regular admin. Only a super admin can apply a
+  final decision; this is what the super admin sees on the dashboard and the
+  application detail page so a review never gets lost in a comment thread.
+  */
+  statusRecommendation: {
+    status: { type: String, default: null },
+    note: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
+    recommendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
+    recommendedByName: { type: String, default: "" },
+    recommendedByRole: { type: String, default: "" },
+    recommendedAt: { type: Date, default: null },
+  },
+  /*
+  Admin updates/remarks added by any admin with access (regular admins can add updates,
+  super admins can see all). Each entry tracks who added it and when.
+  */
+  adminUpdates: [
+    {
+      text: { type: String, required: true, maxlength: [500, "Update is too long (max 500 characters)"] },
+      addedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
+      addedByName: { type: String, default: "" },
+      addedByRole: { type: String, default: "" },
+      addedAt: { type: Date, default: Date.now },
+      // note = plain remark, recommendation = suggested decision, status = final decision log
+      kind: { type: String, default: "note" },
+      suggestedStatus: { type: String, default: null },
+    },
+  ],
 };
 
 /*

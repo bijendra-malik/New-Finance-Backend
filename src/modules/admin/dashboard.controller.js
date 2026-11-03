@@ -3,7 +3,12 @@ const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanStatus");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { USER_ROLE } = require("../../constants/roles");
-const { hasProductAccess, isSuperAdmin, visibleLoanFilter } = require("./adminLoanAccess");
+const {
+  hasModuleAccess,
+  hasProductAccess,
+  isSuperAdmin,
+  visibleLoanFilter,
+} = require("./adminLoanAccess");
 
 /*
 ==========================================
@@ -18,6 +23,95 @@ const ROUND = 2;
 
 const stats = async (req, res, next) => {
   try {
+    const canViewLoanDashboard =
+      isSuperAdmin(req.admin) ||
+      Object.values(RESOURCE_ROUTES).some((entry) =>
+        hasProductAccess(req.admin, entry.productKey)
+      );
+    if (!canViewLoanDashboard) {
+      const canViewCustomers = hasModuleAccess(req.admin, "customers");
+      const canViewFranchises = hasModuleAccess(req.admin, "franchises");
+      if (!canViewCustomers && !canViewFranchises) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have permission to access this dashboard",
+        });
+      }
+
+      const dashboardMode = canViewCustomers && canViewFranchises
+        ? "accounts"
+        : canViewFranchises
+          ? "franchises"
+          : "customers";
+
+      const [customerStats, franchiseStats] = await Promise.all([
+        canViewCustomers
+          ? Promise.all([
+              User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE } }),
+              User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE }, isActive: true }),
+              User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE }, isActive: false }),
+              User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE }, isVerified: true }),
+              User.find({ role: { $ne: USER_ROLE.FRANCHISE } })
+                .sort({ createdAt: -1 })
+                .limit(8)
+                .select("customerId name email mobile city state country isVerified isActive createdAt"),
+            ]).then(([totalCustomers, activeCustomers, inactiveCustomers, verifiedCustomers, recentCustomers]) => ({
+              totalCustomers,
+              activeCustomers,
+              inactiveCustomers,
+              verifiedCustomers,
+              recentCustomers,
+            }))
+          : Promise.resolve(null),
+        canViewFranchises
+          ? Promise.all([
+              Franchise.countDocuments(),
+              Franchise.countDocuments({ franchiseStatus: "Pending" }),
+              Franchise.countDocuments({ franchiseStatus: "Approved" }),
+              Franchise.countDocuments({ franchiseStatus: "Rejected" }),
+              Franchise.countDocuments({
+                $or: [
+                  { franchiseStatus: "None" },
+                  { franchiseStatus: { $exists: false } },
+                  { franchiseStatus: "" },
+                ],
+              }),
+              Franchise.countDocuments({ isActive: true }),
+              Franchise.find()
+                .sort({ createdAt: -1 })
+                .limit(8)
+                .select("franchiseId name fullName businessName contactPerson email mobile city state country franchiseStatus isVerified isActive createdAt"),
+            ]).then(([
+              totalFranchises,
+              pendingFranchises,
+              approvedFranchises,
+              rejectedFranchises,
+              registeredFranchises,
+              activeFranchises,
+              recentFranchises,
+            ]) => ({
+              totalFranchises,
+              pendingFranchises,
+              approvedFranchises,
+              rejectedFranchises,
+              registeredFranchises,
+              activeFranchises,
+              recentFranchises,
+            }))
+          : Promise.resolve(null),
+      ]);
+
+      return res.json({
+        success: true,
+        stats: {
+          dashboardMode,
+          ...(customerStats ?? {}),
+          ...(franchiseStats ?? {}),
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    }
+
     const [totalCustomers, totalFranchises, products, recentRaw] = await Promise.all([
       // Customers = users collection (legacy franchise docs bhi excluded).
       User.countDocuments({ role: { $ne: USER_ROLE.FRANCHISE } }),
@@ -81,7 +175,7 @@ const stats = async (req, res, next) => {
             const docs = await Model.find(visibleLoanFilter(req.admin))
               .sort({ createdAt: -1 })
               .limit(10)
-              .select("fullName mobile loanType status loanAmount createdAt");
+              .select("fullName mobile loanType status loanAmount createdAt adminUpdates");
             return docs.map((doc) => ({
               _id: doc._id,
               resource,
@@ -92,6 +186,10 @@ const stats = async (req, res, next) => {
               status: doc.status || "Submitted",
               loanAmount: doc.loanAmount ?? null,
               createdAt: doc.createdAt,
+              adminUpdatesCount: Array.isArray(doc.adminUpdates) ? doc.adminUpdates.length : 0,
+              lastUpdateAt: Array.isArray(doc.adminUpdates) && doc.adminUpdates.length
+                ? doc.adminUpdates[doc.adminUpdates.length - 1]?.addedAt || doc.adminUpdates[0]?.addedAt
+                : null,
             }));
           })
       ),
@@ -101,6 +199,50 @@ const stats = async (req, res, next) => {
       .flat()
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 10);
+
+    /*
+    Admin activity feed — every note, status recommendation and final status
+    change across the products this admin can see. The super admin sees the
+    whole organisation here instead of opening each application.
+    */
+    const updatesRaw = await Promise.all(
+      Object.entries(RESOURCE_ROUTES)
+        .filter(([, entry]) => hasProductAccess(req.admin, entry.productKey))
+        .map(async ([resource, entry]) => {
+          const Model = MODELS[entry.productKey];
+          const docs = await Model.find({
+            ...visibleLoanFilter(req.admin),
+            "adminUpdates.0": { $exists: true },
+          })
+            .sort({ "adminUpdates.addedAt": -1 })
+            .limit(10)
+            .select("fullName applicationNo loanType status loanAmount adminUpdates");
+
+          return docs.flatMap((doc) =>
+            (doc.adminUpdates || []).map((update) => ({
+              _id: `${doc._id}-${update._id}`,
+              applicationId: doc._id,
+              resource,
+              product: entry.label,
+              applicantName: doc.fullName || "",
+              applicationNo: doc.applicationNo || null,
+              loanStatus: doc.status || "Submitted",
+              loanAmount: doc.loanAmount ?? null,
+              text: update.text || "",
+              kind: update.kind || "note",
+              suggestedStatus: update.suggestedStatus || null,
+              addedByName: update.addedByName || "Admin",
+              addedByRole: update.addedByRole || "",
+              addedAt: update.addedAt,
+            }))
+          );
+        })
+    );
+
+    const recentUpdates = updatesRaw
+      .flat()
+      .sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt))
+      .slice(0, 25);
 
     const totals = products.reduce(
       (acc, product) => {
@@ -134,6 +276,7 @@ const stats = async (req, res, next) => {
         approvalRate,
         products,
         recent,
+        recentUpdates,
         generatedAt: new Date().toISOString(),
       },
     });
