@@ -2,13 +2,15 @@ const bcrypt = require("bcryptjs");
 const Admin = require("./admin.model");
 const { isValidEmail } = require("../../utils/validators");
 const { LOAN_TYPE_SLUGS, LOAN_ACCESS_ALL } = require("../../constants/loanTypes");
+const { MODULE_ACCESS_KEYS, MODULE_ACCESS_ALL } = require("./adminLoanAccess");
 
 /*
 ==========================================
 Admin team management.
 
 Super admin yahan se naye admin bana sakta hai, unka role badal sakta hai aur
-tay kar sakta hai kaun kaun se loan products wo admin kholega (`loanAccess`).
+tay kar sakta hai ki admin customer records (`moduleAccess`) aur kaun se loan
+product workspaces (`loanAccess`) dekh sakta hai.
 
 Rules jo service khud enforce karta hai (frontend par bharosa nahi):
   - sirf ek SuperAdmin hi in routes tak pahunchta hai (middleware),
@@ -57,6 +59,22 @@ const normalizeLoanAccess = (value, role) => {
   const invalid = unique.filter((slug) => !LOAN_TYPE_SLUGS.includes(slug));
   if (invalid.length) {
     throw badRequest(`Unknown loan type(s): ${invalid.join(", ")}`);
+  }
+  return unique;
+};
+
+const normalizeModuleAccess = (value, role) => {
+  if (role === ROLE.SUPER) return MODULE_ACCESS_ALL;
+  if (value === undefined || value === null) return [];
+  if (value === MODULE_ACCESS_ALL) return MODULE_ACCESS_ALL;
+  if (!Array.isArray(value)) {
+    throw badRequest('moduleAccess must be "all" or an array of module keys');
+  }
+
+  const unique = [...new Set(value.map((entry) => String(entry).trim()))].filter(Boolean);
+  const invalid = unique.filter((key) => !MODULE_ACCESS_KEYS.includes(key));
+  if (invalid.length) {
+    throw badRequest(`Unknown module(s): ${invalid.join(", ")}`);
   }
   return unique;
 };
@@ -110,6 +128,7 @@ const toPublic = (admin) => {
     email: doc.email,
     role: doc.role,
     loanAccess: doc.role === ROLE.SUPER ? LOAN_ACCESS_ALL : doc.loanAccess ?? [],
+    moduleAccess: doc.role === ROLE.SUPER ? MODULE_ACCESS_ALL : doc.moduleAccess ?? [],
     isActive: doc.isActive !== false,
     lastLogin: doc.lastLogin ?? null,
     createdAt: doc.createdAt,
@@ -124,7 +143,7 @@ const listAdmins = async () => {
   return admins.map(toPublic);
 };
 
-const createAdmin = async ({ loginId, name, email, password, role, loanAccess }) => {
+const createAdmin = async ({ loginId, name, email, password, role, loanAccess, moduleAccess }) => {
   const cleanName = String(name ?? "").trim();
   if (cleanName.length < 2) throw badRequest("Name is required");
   if (cleanName.length > 100) throw badRequest("Name is too long (max 100 characters)");
@@ -137,6 +156,7 @@ const createAdmin = async ({ loginId, name, email, password, role, loanAccess })
     String(loginId ?? "").trim() || deriveLoginId(cleanEmail)
   );
   const access = normalizeLoanAccess(loanAccess, cleanRole);
+  const modAccess = normalizeModuleAccess(moduleAccess, cleanRole);
 
   const admin = await Admin.create({
     name: cleanName,
@@ -145,6 +165,7 @@ const createAdmin = async ({ loginId, name, email, password, role, loanAccess })
     password: await bcrypt.hash(String(password), 10),
     role: cleanRole,
     loanAccess: access,
+    moduleAccess: modAccess,
   });
 
   return toPublic(admin);
@@ -179,6 +200,9 @@ const updateAdmin = async (id, patch = {}, actorId) => {
   admin.role = nextRole;
   if (patch.loanAccess !== undefined || nextRole === ROLE.SUPER || demotingSuperAdmin) {
     admin.loanAccess = normalizeLoanAccess(patch.loanAccess, nextRole);
+  }
+  if (patch.moduleAccess !== undefined || nextRole === ROLE.SUPER || demotingSuperAdmin) {
+    admin.moduleAccess = normalizeModuleAccess(patch.moduleAccess, nextRole);
   }
 
   await admin.save();
