@@ -234,6 +234,26 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
       });
     }
 
+    /*
+    Every final decision is also written to the timeline so the super admin
+    dashboard can show who moved this application and when without opening
+    each application.
+    */
+    const actor = req.admin || {};
+    const actorName =
+      actor.name || actor.fullName || actor.loginId || actor.email || "Admin";
+    if (!Array.isArray(application.adminUpdates)) application.adminUpdates = [];
+    application.adminUpdates.unshift({
+      text: `Status changed: ${currentStatus} → ${status}${noteText ? ` — ${noteText}` : ""}`,
+      kind: "status",
+      suggestedStatus: status,
+      addedBy: actor.id || actor._id || null,
+      addedByName: actorName,
+      addedByRole: actor.role || "",
+      addedAt: new Date(),
+    });
+    // The decision is final now, so a pending recommendation is stale.
+    application.statusRecommendation = null;
     application.status = status;
     application.adminNote = noteText;
 
@@ -251,6 +271,81 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
     res.json({
       success: true,
       message: `${labelFor(resource)} application marked ${status.toLowerCase()}`,
+      loan: application,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/{resource}/:id/updates
+ * Body: { text: string }
+ * Any admin with product access can add an update/remark.
+ */
+const addUpdateHandler = (resource) => async (req, res, next) => {
+  try {
+    const Model = modelFor(resource);
+    if (!Model) throw notFound("Unknown application type");
+
+    const { text, suggestedStatus } = req.body ?? {};
+    const updateText = text === undefined || text === null ? "" : String(text).trim();
+
+    const suggestion = suggestedStatus ? String(suggestedStatus).trim() : "";
+    if (suggestion && !SETTABLE_STATUSES.includes(suggestion)) {
+      throw badRequest(`Suggested status must be one of: ${SETTABLE_STATUSES.join(", ")}`);
+    }
+    if (!updateText && !suggestion) {
+      throw badRequest("Update text or a suggested status is required");
+    }
+    if (updateText.length > 500) {
+      throw badRequest("Update is too long (max 500 characters)");
+    }
+
+    if (!isValidObjectId(req.params.id))
+      throw notFound("Application not found");
+
+    const application = await Model.findOne(
+      visibleLoanFilter(req.admin, { _id: req.params.id })
+    );
+    if (!application)
+      throw notFound(`${labelFor(resource)} application not found`);
+
+    const admin = req.admin || {};
+    const addedByName =
+      admin.name || admin.fullName || admin.loginId || admin.email || "Admin";
+    const addedByRole = admin.role || "";
+
+    if (suggestion) {
+      application.statusRecommendation = {
+        status: suggestion,
+        note: updateText,
+        recommendedBy: admin.id || admin._id || null,
+        recommendedByName: addedByName,
+        recommendedByRole: addedByRole,
+        recommendedAt: new Date(),
+      };
+    }
+
+    if (!Array.isArray(application.adminUpdates)) {
+      application.adminUpdates = [];
+    }
+
+    application.adminUpdates.unshift({
+      text: updateText || `Recommended ${suggestion}`,
+      kind: suggestion ? "recommendation" : "note",
+      suggestedStatus: suggestion || null,
+      addedBy: admin.id || admin._id || null,
+      addedByName,
+      addedByRole,
+      addedAt: new Date(),
+    });
+
+    await application.save();
+
+    res.json({
+      success: true,
+      message: "Update added successfully",
       loan: application,
     });
   } catch (error) {
@@ -324,6 +419,7 @@ module.exports = {
   getListHandler,
   getByIdHandler,
   updateStatusHandler,
+  addUpdateHandler,
   deleteApplicationHandler,
   listCustomerApplications,
   isValidObjectId,
