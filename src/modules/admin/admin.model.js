@@ -52,6 +52,17 @@ const adminSchema = new mongoose.Schema(
       default: [],
     },
 
+    /*
+    Module-level access: `"all"` or keys like `["customers", "franchises"]`.
+    Customer access grants customer list/profile visibility; loanAccess
+    separately controls loan product workspaces. Super Admins always have
+    access to all modules. Regular admins get only modules explicitly assigned.
+    */
+    moduleAccess: {
+      type: mongoose.Schema.Types.Mixed,
+      default: [],
+    },
+
     isActive: {
       type: Boolean,
       default: true,

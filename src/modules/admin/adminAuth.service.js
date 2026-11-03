@@ -7,6 +7,7 @@ const { otpEmailTemplate } = require("../../utils/emailTemplates");
 const { isValidEmail, isStrongPassword } = require("../../utils/validators");
 const { freshOtp } = require("../../utils/otp");
 const { LOAN_ACCESS_ALL } = require("../../constants/loanTypes");
+const { MODULE_ACCESS_ALL } = require("./adminLoanAccess");
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -69,6 +70,8 @@ const authenticateAdmin = async (email, password) => {
   delete safeAdmin.password;
   safeAdmin.loanAccess =
     admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
+  safeAdmin.moduleAccess =
+    admin.role === "SuperAdmin" ? MODULE_ACCESS_ALL : admin.moduleAccess ?? [];
 
   return { token, admin: safeAdmin };
 };
@@ -83,6 +86,7 @@ const getAdminById = async (id) => {
   }
 
   admin.loanAccess = admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
+  admin.moduleAccess = admin.role === "SuperAdmin" ? MODULE_ACCESS_ALL : admin.moduleAccess ?? [];
   return admin;
 };
 
