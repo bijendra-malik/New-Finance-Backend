@@ -19,6 +19,9 @@ const PRODUCT_ACCESS_SLUGS = {
   filmFunding: "film-funding",
 };
 
+const MODULE_ACCESS_KEYS = ["customers", "franchises"];
+const MODULE_ACCESS_ALL = "all";
+
 const isSuperAdmin = (admin) => admin?.role === "SuperAdmin";
 
 const hasLoanAccess = (admin, slug) =>
@@ -26,16 +29,28 @@ const hasLoanAccess = (admin, slug) =>
   admin?.loanAccess === "all" ||
   (Array.isArray(admin?.loanAccess) && admin.loanAccess.includes(slug));
 
+const hasModuleAccess = (admin, moduleKey) => {
+  if (isSuperAdmin(admin)) return true;
+  if (!moduleKey) return false;
+  if (admin?.moduleAccess === MODULE_ACCESS_ALL) return true;
+  if (Array.isArray(admin?.moduleAccess)) {
+    return admin.moduleAccess.includes(moduleKey);
+  }
+  return false;
+};
+
 const hasProductAccess = (admin, productKey) => {
   const slug = PRODUCT_ACCESS_SLUGS[productKey];
   return Boolean(slug && hasLoanAccess(admin, slug));
 };
 
 /*
-A restricted admin ko apne assigned product ke direct customer applications
-dikhte hain — Submitted, Pending, Approved aur Rejected sab. Franchise-origin
+Product workspaces me restricted admin ko apne assigned product ke direct
+customer applications dikhte hain — Submitted, Pending, Approved aur Rejected
+sab. Customer module access sirf customer listing/profile ke liye hai; woh loan
+product workspaces ya applications ka access nahi deta. Franchise-origin
 applications franchise ke separate workflow me rehte hain, so only SuperAdmin
-can see them through the general product endpoints.
+can see them through product endpoints.
 
 Pehle yahan `status: { $ne: "Rejected" }` laga hua tha, jiski wajah se:
   - admin ko apne hi product ki rejected applications list me dikhti hi nahi
@@ -65,11 +80,26 @@ const requireLoanAccess = (productKey) => (req, res, next) => {
   });
 };
 
+const requireModuleAccess = (moduleKey) => (req, res, next) => {
+  if (hasModuleAccess(req.admin, moduleKey)) {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    message: `You do not have permission to access this module`,
+  });
+};
+
 module.exports = {
   PRODUCT_ACCESS_SLUGS,
+  MODULE_ACCESS_KEYS,
+  MODULE_ACCESS_ALL,
   isSuperAdmin,
   hasLoanAccess,
   hasProductAccess,
+  hasModuleAccess,
   visibleLoanFilter,
   requireLoanAccess,
+  requireModuleAccess,
 };

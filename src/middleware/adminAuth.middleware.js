@@ -38,7 +38,7 @@ module.exports = async (req, res, next) => {
   }
 
   try {
-    const admin = await Admin.findById(decoded.id).select("email role loanAccess isActive");
+    const admin = await Admin.findById(decoded.id).select("email role loanAccess moduleAccess isActive");
 
     if (!admin) {
       return res.status(401).json({
@@ -59,6 +59,7 @@ module.exports = async (req, res, next) => {
       email: admin.email,
       role: admin.role,
       loanAccess: admin.loanAccess,
+      moduleAccess: admin.moduleAccess,
     };
 
     return next();
