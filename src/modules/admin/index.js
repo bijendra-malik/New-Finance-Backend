@@ -2,6 +2,7 @@ const router = require("express").Router();
 
 const adminAuth = require("../../middleware/adminAuth.middleware");
 const requireSuperAdmin = require("../../middleware/requireSuperAdmin.middleware");
+const { requireModuleAccess } = require("./adminLoanAccess");
 
 /*
 ========================================
@@ -32,9 +33,9 @@ router.use("/masters/location", adminAuth, require("../location/location.routes"
 
 router.use("/masters", adminAuth, require("./master.routes"));
 
-router.use("/customers", adminAuth, require("./customer.routes"));
+router.use("/customers", adminAuth, requireModuleAccess("customers"), require("./customer.routes"));
 
-router.use("/franchises", adminAuth, requireSuperAdmin, require("./franchise.routes"));
+router.use("/franchises", adminAuth, requireModuleAccess("franchises"), require("./franchise.routes"));
 
 /*
 Franchise investment plans — admin yahan fee / validity / renewal edit karta
@@ -43,7 +44,7 @@ jaata hai. "/franchises" se alag prefix hai, isliye order ka issue nahi.
 */
 router.use("/franchise-plans", adminAuth, requireSuperAdmin, require("./franchisePlan.routes"));
 
-/* Franchise ke customers ka poora network view (read-only admin view). */
+/* Franchise ke customers ka pooro network view (read-only admin view). */
 router.use("/franchise-customers", adminAuth, requireSuperAdmin, require("./franchiseCustomer.routes"));
 
 module.exports = router;
