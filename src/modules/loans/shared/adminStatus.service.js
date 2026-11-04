@@ -16,7 +16,11 @@ decision stamps approvedBy/approvedAt (or rejectedAt) + adminNote.
 */
 
 const { MODELS, SETTABLE_STATUSES, canTransition } = require("./loanStatus");
-const { hasProductAccess, visibleLoanFilter } = require("../../admin/adminLoanAccess");
+const {
+  hasProductAccess,
+  isSuperAdmin,
+  visibleLoanFilter,
+} = require("../../admin/adminLoanAccess");
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -280,13 +284,26 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
 
 /**
  * POST /api/admin/{resource}/:id/updates
- * Body: { text: string }
- * Any admin with product access can add an update/remark.
+ * Body: { text: string, suggestedStatus?: string }
+ *
+ * Sirf REGULAR admin (product access ke saath) application par update/remark
+ * ya status recommendation de sakta hai. Super Admin ka kaam sunna aur final
+ * decision lena hai — woh loan par message nahi karta, isliye yahan 403.
+ * (Final status PATCH /:id/status se hi hota hai, jo super admin ke liye khula
+ * hai aur audit trail me kind: "status" ke roop me record hota hai.)
  */
 const addUpdateHandler = (resource) => async (req, res, next) => {
   try {
     const Model = modelFor(resource);
     if (!Model) throw notFound("Unknown application type");
+
+    if (isSuperAdmin(req.admin)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Super admins cannot add updates on loan applications — only regular admins can.",
+      });
+    }
 
     const { text, suggestedStatus } = req.body ?? {};
     const updateText = text === undefined || text === null ? "" : String(text).trim();

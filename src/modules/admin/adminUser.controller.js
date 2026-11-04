@@ -18,6 +18,8 @@ exports.list = async (req, res, next) => {
     res.json({
       success: true,
       admins,
+      // UI shows these seats as "used / limit" and blocks the create button.
+      limits: { regularAdmins: adminUserService.MAX_REGULAR_ADMINS },
     });
   } catch (error) {
     next(error);
