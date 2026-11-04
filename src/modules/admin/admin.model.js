@@ -78,4 +78,16 @@ const adminSchema = new mongoose.Schema(
   }
 );
 
+/*
+==========================================
+Database Indexes for Performance
+==========================================
+*/
+
+// Admin login and status checks
+adminSchema.index({ isActive: 1, role: 1 });
+
+// Recent login tracking
+adminSchema.index({ lastLogin: -1 });
+
 module.exports = mongoose.model("Admin", adminSchema);

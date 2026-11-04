@@ -130,4 +130,26 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+/*
+==========================================
+Database Indexes for Performance
+==========================================
+These indexes speed up common queries:
+*/
+
+// Status tracking by PAN number (GET /api/customer/status)
+userSchema.index({ panNumber: 1 });
+
+// Filter active customers/franchises (admin dashboard, listings)
+userSchema.index({ isActive: 1, role: 1 });
+
+// Credit eligibility checks (loan applications)
+userSchema.index({ creditEligible: 1, creditEligibilityExpiresAt: 1 });
+
+// Customer ID lookups (status checks)
+userSchema.index({ customerId: 1 });
+
+// Recent users listing (createdAt descending)
+userSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model("User", userSchema);
