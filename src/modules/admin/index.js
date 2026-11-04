@@ -21,6 +21,14 @@ wahan 404 ho jata.
 */
 router.use("/admins", require("./adminUser.routes"));
 
+/*
+Admin activity feed (super admin only) — har loan product ke adminUpdates
+ko ek jagah jodta hai: kis admin ne kis loan par kya update kiya.
+"/" wale application router se pehle mount hota hai, warna "/activity"
+wahin 404 ho jata.
+*/
+router.use("/activity", require("./adminActivity.routes"));
+
 router.use("/", adminAuth, require("./application.routes"));
 
 /*
