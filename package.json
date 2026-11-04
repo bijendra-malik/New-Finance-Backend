@@ -28,7 +28,8 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.1",
     "morgan": "^1.11.0",
-    "nodemailer": "^10.0.13"
+    "nodemailer": "^10.0.13",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "country-state-city": "^3.2.1",
