@@ -15,6 +15,15 @@ const app = express();
 app.use(helmet());
 
 // Prevent NoSQL injection attacks
+app.use((req, res, next) => {
+    Object.defineProperty(req, "query", {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: req.query,
+    });
+    next();
+});
 app.use(mongoSanitize());
 
 // Prevent XSS (Cross-Site Scripting) attacks
