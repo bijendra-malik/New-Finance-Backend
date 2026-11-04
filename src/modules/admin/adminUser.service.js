@@ -27,6 +27,8 @@ const ROLE = {
 
 const LOGIN_ID_REGEX = /^[a-z0-9][a-z0-9._-]{2,23}$/i;
 const MIN_PASSWORD_LENGTH = 6;
+/** Super admin can create at most this many regular admins. */
+const MAX_REGULAR_ADMINS = 25;
 
 const fail = (statusCode, message) => {
   const error = new Error(message);
@@ -111,6 +113,23 @@ const assertLoginId = async (loginId, exceptId) => {
   return clean;
 };
 
+/**
+==========================================
+Regular admin seats.
+
+Super admin 25 se zyada regular admin nahi bana sakta — count sirf `Admin` role
+ka hota hai, super admins isme nahi gine jaate.
+==========================================
+*/
+const assertAdminSeat = async () => {
+  const used = await Admin.countDocuments({ role: ROLE.ADMIN });
+  if (used >= MAX_REGULAR_ADMINS) {
+    throw badRequest(
+      `Limit reached: only ${MAX_REGULAR_ADMINS} regular admins can be created. Delete one to add another.`
+    );
+  }
+};
+
 const countOtherSuperAdmins = async (exceptId) => {
   const query = { role: ROLE.SUPER, isActive: true };
   if (exceptId) query._id = { $ne: exceptId };
@@ -152,6 +171,7 @@ const createAdmin = async ({ loginId, name, email, password, role, loanAccess, m
 
   const cleanEmail = await assertEmail(email);
   const cleanRole = normalizeRole(role);
+  if (cleanRole === ROLE.ADMIN) await assertAdminSeat();
   const cleanLoginId = await assertLoginId(
     String(loginId ?? "").trim() || deriveLoginId(cleanEmail)
   );
@@ -177,6 +197,8 @@ const updateAdmin = async (id, patch = {}, actorId) => {
 
   const isSelf = String(admin._id) === String(actorId);
   const nextRole = normalizeRole(patch.role, admin.role);
+  // Demoting a super admin into a regular seat must respect the same 25 cap.
+  if (nextRole === ROLE.ADMIN && admin.role !== ROLE.ADMIN) await assertAdminSeat();
 
   if (admin.role === ROLE.SUPER && nextRole !== ROLE.SUPER) {
     if (isSelf) throw badRequest("You cannot remove your own super admin role");
@@ -255,6 +277,7 @@ const deleteAdmin = async (id, actorId) => {
 
 module.exports = {
   ROLE,
+  MAX_REGULAR_ADMINS,
   listAdmins,
   createAdmin,
   updateAdmin,
