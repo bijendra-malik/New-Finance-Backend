@@ -4,13 +4,21 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const mongoSanitize = require("express-mongo-sanitize");
+const xss = require("xss-clean");
 
 const app = express();
 
 /* ============================
-   Middlewares
+   Security Middlewares
 ============================ */
 app.use(helmet());
+
+// Prevent NoSQL injection attacks
+app.use(mongoSanitize());
+
+// Prevent XSS (Cross-Site Scripting) attacks
+app.use(xss());
 
 // Explicit origin allowlist — never leave this as bare cors() in a project
 // handling financial/PII data (see SECURITY-PLAN.md §3).
