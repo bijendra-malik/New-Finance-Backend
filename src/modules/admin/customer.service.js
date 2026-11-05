@@ -28,10 +28,17 @@ const conflict = (message) => {
   return error;
 };
 
+/*
+Har customer query ka base filter: franchise accounts `users` collection me hi
+rehte hain par customers nahi hain. Yahan define hota hai kyunki dashboard,
+activity feed aur pending-decision queue — teenon ko yahi rule chahiye.
+*/
+const CUSTOMER_FILTER = { role: { $ne: USER_ROLE.FRANCHISE } };
+
 const listCustomers = async ({ search, page, limit, isActive } = {}) => {
   // Franchise accounts live in the same collection but are managed on the
   // /api/admin/franchises endpoints, so they never show up as customers here.
-  const filter = { role: { $ne: USER_ROLE.FRANCHISE } };
+  const filter = { ...CUSTOMER_FILTER };
 
   const q = String(search ?? "").trim();
   if (q) {
@@ -46,7 +53,9 @@ const listCustomers = async ({ search, page, limit, isActive } = {}) => {
   const safeLimit = Math.min(Math.max(Number(limit) || 0, 0), 100) || 0;
   const pageNumber = Math.max(Number(page) || 1, 1);
 
-  const query = User.find(filter).sort({ createdAt: -1 });
+  // List me poora thread nahi chahiye: 100 rows x 200 entries ka payload banta
+  // hai. Trail sirf detail endpoint se aata hai.
+  const query = User.find(filter).select("-adminUpdates").sort({ createdAt: -1 });
   if (safeLimit > 0) {
     query.skip((pageNumber - 1) * safeLimit).limit(safeLimit);
   }
@@ -123,6 +132,7 @@ const deleteCustomer = async (id) => {
 };
 
 module.exports = {
+  CUSTOMER_FILTER,
   listCustomers,
   getCustomerById,
   deleteCustomer,

@@ -2,6 +2,11 @@ const customerService = require("./customer.service");
 const {
   listCustomerApplications,
 } = require("../loans/shared/adminStatus.service");
+const {
+  addEntityUpdate,
+  pushStatusUpdate,
+} = require("./adminUpdate.service");
+const { MAX_UPDATE_TEXT } = require("../shared/adminUpdate.schema");
 
 /*
 ==========================================
@@ -73,12 +78,16 @@ exports.remove = async (req, res, next) => {
 /*
 ==========================================
 Set Customer Active Status
-PATCH /api/admin/customers/:id/status   { isActive: true|false }
+PATCH /api/admin/customers/:id/status   { isActive: true|false, note? }
+
+Super admin ka final decision. Reason trail me `kind: "status"` entry ban kar
+jaata hai (loan ke PATCH /:id/status jaisa) aur koi pending recommendation
+clear ho jaati hai.
 ==========================================
 */
 exports.setStatus = async (req, res, next) => {
   try {
-    const { isActive } = req.body ?? {};
+    const { isActive, note } = req.body ?? {};
     if (typeof isActive !== "boolean") {
       return res.status(400).json({
         success: false,
@@ -86,13 +95,72 @@ exports.setStatus = async (req, res, next) => {
       });
     }
 
+    const noteText = note === undefined || note === null ? "" : String(note).trim();
+    if (noteText.length > MAX_UPDATE_TEXT) {
+      return res.status(400).json({
+        success: false,
+        message: `Reason is too long (max ${MAX_UPDATE_TEXT} characters)`,
+      });
+    }
+
     const customer = await customerService.getCustomerById(req.params.id);
+
+    if (customer.isActive === isActive) {
+      return res.status(409).json({
+        success: false,
+        message: `Customer is already ${isActive ? "active" : "inactive"}`,
+      });
+    }
+
+    const from = customer.isActive ? "Active" : "Inactive";
+    pushStatusUpdate(customer, req, {
+      entity: "customer",
+      tag: isActive ? "verification" : "flag",
+      status: isActive ? "Active" : "Inactive",
+      text: `Account ${from} → ${isActive ? "Active" : "Inactive"}${noteText ? ` — ${noteText}` : ""}`,
+    });
     customer.isActive = isActive;
     await customer.save();
 
     res.json({
       success: true,
       message: `Customer ${isActive ? "activated" : "deactivated"} successfully`,
+      customer,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+==========================================
+Add Customer Update
+POST /api/admin/customers/:id/updates
+Body: { text: string, tag?: string, suggestedStatus?: "Active"|"Inactive" }
+
+Sirf REGULAR admin likh sakta hai — super admin ka kaam message likhna nahi,
+final decision lena hai (isliye 403). Decision suggest karte hi wo super admin
+ke "decision pending" queue me aa jaata hai.
+==========================================
+*/
+exports.addUpdate = async (req, res, next) => {
+  try {
+    const { text, tag, suggestedStatus } = req.body ?? {};
+    const customer = await customerService.getCustomerById(req.params.id);
+
+    addEntityUpdate(customer, req, {
+      entity: "customer",
+      text,
+      tag,
+      suggestedStatus,
+    });
+
+    await customer.save();
+
+    /* Loan jaisa shape: `loan` ki jagah `customer`, poora doc (trail included). */
+    res.json({
+      success: true,
+      message: "Update added successfully",
       customer,
     });
   } catch (error) {
