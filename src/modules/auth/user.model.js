@@ -1,5 +1,9 @@
 const mongoose = require("mongoose");
 const { USER_ROLE, USER_ROLE_VALUES } = require("../../constants/roles");
+const {
+  adminUpdateFields,
+  statusRecommendationFields,
+} = require("../shared/adminUpdate.schema");
 
 /*
 ==========================================
@@ -124,6 +128,16 @@ const userSchema = new mongoose.Schema(
       default: [],
       select: false,
     },
+
+    /*
+    Admin work trail — regular admin ka verification / correction / flag /
+    escalation aur super admin ka final account decision (enable/disable).
+    Loan products par pehle se yahi trail hai; customer par bhi same shape.
+    */
+    adminUpdates: [adminUpdateFields("customer")],
+
+    /* Latest pending decision suggestion — decision lete hi null ho jaata hai. */
+    statusRecommendation: statusRecommendationFields("customer"),
   },
   {
     timestamps: true,
@@ -146,10 +160,10 @@ userSchema.index({ isActive: 1, role: 1 });
 // Credit eligibility checks (loan applications)
 userSchema.index({ creditEligible: 1, creditEligibilityExpiresAt: 1 });
 
-// Customer ID lookups (status checks)
-userSchema.index({ customerId: 1 });
-
 // Recent users listing (createdAt descending)
 userSchema.index({ createdAt: -1 });
+
+// Super admin ke "decision pending" queue ke liye
+userSchema.index({ "statusRecommendation.status": 1 });
 
 module.exports = mongoose.model("User", userSchema);

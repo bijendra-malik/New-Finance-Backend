@@ -4,6 +4,10 @@ const {
   FRANCHISE_STATUS,
   FRANCHISE_STATUS_VALUES,
 } = require("../../constants/roles");
+const {
+  adminUpdateFields,
+  statusRecommendationFields,
+} = require("../shared/adminUpdate.schema");
 
 /*
 ==========================================
@@ -153,6 +157,16 @@ const franchiseSchema = new mongoose.Schema(
     franchiseAppliedAt: { type: Date, default: null },
     franchiseApprovedAt: { type: Date, default: null },
     franchiseRejectedAt: { type: Date, default: null },
+
+    /*
+    Admin work trail — document check, field visit, verification, flag,
+    escalation (regular admin) aur approve/reject ka final decision (super
+    admin). Customer / loan trail ke saath same shape.
+    */
+    adminUpdates: [adminUpdateFields("franchise")],
+
+    /* Latest pending decision suggestion — decision lete hi null ho jaata hai. */
+    statusRecommendation: statusRecommendationFields("franchise"),
 
     // Initial password = PAN number (admin approval par set hota hai), sirf
     // bcrypt hash ke roop me store hota hai. Never selected by default.
