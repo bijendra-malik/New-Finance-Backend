@@ -9,6 +9,8 @@ const {
   isSuperAdmin,
   visibleLoanFilter,
 } = require("./adminLoanAccess");
+const { ENTITY_PRODUCTS, collectEntityUpdates } = require("./adminActivity.service");
+const { collectPendingDecisions } = require("./adminUpdate.service");
 
 /*
 ==========================================
@@ -239,10 +241,50 @@ const stats = async (req, res, next) => {
         })
     );
 
-    const recentUpdates = updatesRaw
-      .flat()
+    /*
+    Customers aur franchises bhi regular admins ke kaam ka hissa hain — unke
+    trail bhi isi panel me aate hain, taaki super admin ek jagah sab dekhe.
+    */
+    const ENTITY_WINDOW_DAYS = 30;
+    const entitySince = new Date(
+      Date.now() - ENTITY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    );
+    const entityBatches = await Promise.all(
+      ENTITY_PRODUCTS.map((product) => collectEntityUpdates(product, entitySince))
+    );
+
+    /*
+    Entity rows ko dashboard row shape me map karte hain — frontend ek hi
+    `toAdminActivity` se sab rows padhta hai (`product`, `applicantName`).
+    */
+    const entityRows = entityBatches.flat().map((row) => ({
+      _id: row.id,
+      applicationId: row.entityId,
+      entity: row.entity,
+      entityId: row.entityId,
+      resource: row.productKey,
+      product: row.label,
+      applicantName: row.customerName,
+      applicationNo: row.applicationNo,
+      loanStatus: row.loanStatus,
+      loanAmount: null,
+      text: row.text,
+      tag: row.tag,
+      kind: row.kind,
+      suggestedStatus: row.suggestedStatus,
+      addedByName: row.adminName,
+      addedByRole: row.adminRole,
+      addedAt: row.addedAt,
+    }));
+
+    const recentUpdates = [...updatesRaw.flat(), ...entityRows]
       .sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt))
       .slice(0, 25);
+
+    /* Super admin ko seedha dikhe: kis record ka final decision pending hai. */
+    const pendingDecisions = isSuperAdmin(req.admin)
+      ? await collectPendingDecisions()
+      : null;
 
     const totals = products.reduce(
       (acc, product) => {
@@ -277,6 +319,7 @@ const stats = async (req, res, next) => {
         products,
         recent,
         recentUpdates,
+        ...(pendingDecisions ? { pendingDecisions } : {}),
         generatedAt: new Date().toISOString(),
       },
     });

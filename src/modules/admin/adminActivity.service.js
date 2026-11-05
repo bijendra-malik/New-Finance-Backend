@@ -1,4 +1,7 @@
 const Admin = require("./admin.model");
+const User = require("../auth/user.model");
+const Franchise = require("../franchise/franchise.model");
+const { CUSTOMER_FILTER } = require("./customer.service");
 const { MODELS } = require("../loans/shared/loanStatus");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { PRODUCT_ACCESS_SLUGS } = require("./adminLoanAccess");
@@ -39,6 +42,27 @@ const PRODUCTS = Object.entries(RESOURCE_ROUTES).map(([resource, entry]) => ({
   label: entry.label,
 }));
 
+/*
+Customers aur franchises bhi regular admins ke kaam ka hissa hain, isliye ek
+hi feed me unke threads bhi aate hain — loan products ke saath, alag section me.
+*/
+const ENTITY_PRODUCTS = [
+  {
+    resource: "customers",
+    productKey: "customers",
+    slug: "",
+    label: "Customers",
+    entity: "customer",
+  },
+  {
+    resource: "franchises",
+    productKey: "franchises",
+    slug: "",
+    label: "Franchises",
+    entity: "franchise",
+  },
+];
+
 const toInt = (value, fallback, min, max) => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -53,7 +77,7 @@ const resolveProduct = (value) => {
   const needle = String(value ?? "").trim();
   if (!needle) return null;
   return (
-    PRODUCTS.find(
+    [...PRODUCTS, ...ENTITY_PRODUCTS].find(
       (product) =>
         product.productKey === needle ||
         product.slug === needle ||
@@ -120,6 +144,65 @@ const collectProductUpdates = async (product, since) => {
     .filter((row) => !(row.adminRole === "SuperAdmin" && row.kind !== "status"));
 };
 
+const mapEntityUpdate = (product, entity, doc, update) => {
+  const addedAt = update.addedAt ? new Date(update.addedAt) : null;
+  const addedAtMs = addedAt && !Number.isNaN(addedAt.getTime()) ? addedAt.getTime() : 0;
+  const isCustomer = entity === "customer";
+
+  return {
+    id: `${doc._id}-${update._id ?? addedAtMs ?? 0}`,
+    entity,
+    entityId: String(doc._id),
+    applicationId: String(doc._id),
+    productKey: product.productKey,
+    slug: product.slug,
+    label: isCustomer ? "Customer" : "Franchise",
+    customerName: doc.name || "",
+    mobile: doc.mobile || "",
+    applicationNo: isCustomer ? doc.customerId || null : doc.franchiseId || null,
+    loanStatus: isCustomer
+      ? doc.isActive
+        ? "Active"
+        : "Inactive"
+      : doc.franchiseStatus || "Pending",
+    loanAmount: null,
+    text: update.text || "",
+    tag: update.tag || "general",
+    kind: resolveKind(update.kind),
+    suggestedStatus: update.suggestedStatus || null,
+    adminId: update.addedBy ? String(update.addedBy) : null,
+    adminName: update.addedByName || "Admin",
+    adminRole: update.addedByRole || "",
+    addedAt: addedAtMs ? addedAt.toISOString() : "",
+    addedAtMs,
+  };
+};
+
+/** Ek entity type ka trail (customers ya franchises), newest first. */
+const collectEntityUpdates = async (product, since) => {
+  const Model = product.entity === "customer" ? User : Franchise;
+  const filter = { "adminUpdates.0": { $exists: true } };
+  if (since) filter["adminUpdates.addedAt"] = { $gte: since };
+  // `users` collection me purane franchise accounts bhi ho sakte hain.
+  if (product.entity === "customer") Object.assign(filter, CUSTOMER_FILTER);
+
+  const docs = await Model.find(filter)
+    .select("name mobile customerId franchiseId franchiseStatus isActive adminUpdates")
+    .sort({ "adminUpdates.addedAt": -1 })
+    .limit(MAX_DOCS_PER_PRODUCT);
+
+  const sinceMs = since ? since.getTime() : 0;
+
+  return docs
+    .flatMap((doc) =>
+      (doc.adminUpdates || [])
+        .map((update) => mapEntityUpdate(product, product.entity, doc, update))
+        .filter((row) => !sinceMs || row.addedAtMs >= sinceMs)
+    )
+    /* Loan jaisa hi niyam: super admin thread par likhta nahi, sirf decision. */
+    .filter((row) => !(row.adminRole === "SuperAdmin" && row.kind !== "status"));
+};
+
 const listActivity = async (query = {}) => {
   const days = toInt(query.days, DEFAULT_DAYS, 0, MAX_DAYS);
   const limit = toInt(query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
@@ -130,9 +213,10 @@ const listActivity = async (query = {}) => {
 
   // All products are read on purpose: the per-product counts must not collapse
   // when one product is selected. The selection only narrows the visible list.
-  const batches = await Promise.all(
-    PRODUCTS.map((entry) => collectProductUpdates(entry, since))
-  );
+  const batches = await Promise.all([
+    ...PRODUCTS.map((entry) => collectProductUpdates(entry, since)),
+    ...ENTITY_PRODUCTS.map((entry) => collectEntityUpdates(entry, since)),
+  ]);
 
   const all = batches.flat().sort((left, right) => right.addedAtMs - left.addedAtMs);
 
@@ -189,7 +273,7 @@ const listActivity = async (query = {}) => {
     lastActivityAt: all[0]?.addedAt || null,
     updates: visible.slice(0, limit).map(({ addedAtMs, ...row }) => row),
     admins,
-    products: PRODUCTS.map((entry) => ({
+    products: [...PRODUCTS, ...ENTITY_PRODUCTS].map((entry) => ({
       key: entry.productKey,
       slug: entry.slug,
       label: entry.label,
@@ -198,4 +282,4 @@ const listActivity = async (query = {}) => {
   };
 };
 
-module.exports = { PRODUCTS, listActivity };
+module.exports = { PRODUCTS, ENTITY_PRODUCTS, collectEntityUpdates, listActivity };
