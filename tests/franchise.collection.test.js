@@ -115,11 +115,14 @@ describe("admin franchise management reads the franchises collection", () => {
 
   it("lists franchise applications from `franchises` with the status filter", async () => {
     const sort = jest.fn().mockResolvedValue([]);
-    Franchise.find.mockReturnValue({ sort });
+    // List projection: poora thread list payload me nahi jaata.
+    const select = jest.fn().mockReturnValue({ sort });
+    Franchise.find.mockReturnValue({ select });
 
     const result = await adminFranchiseService.listFranchises({ status: "Approved" });
 
     expect(Franchise.find).toHaveBeenCalledWith({ franchiseStatus: "Approved" });
+    expect(select).toHaveBeenCalledWith("-adminUpdates");
     expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
     expect(result).toEqual([]);
   });

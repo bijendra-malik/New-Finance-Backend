@@ -38,7 +38,13 @@ module.exports = async (req, res, next) => {
   }
 
   try {
-    const admin = await Admin.findById(decoded.id).select("email role loanAccess moduleAccess isActive");
+    /*
+    `name`/`loginId` bhi chahiye: audit trail (addedByName) me email ke bajaye
+    asli naam dikhana hai — customer/franchise updates aur loans dono.
+    */
+    const admin = await Admin.findById(decoded.id).select(
+      "name loginId email role loanAccess moduleAccess isActive"
+    );
 
     if (!admin) {
       return res.status(401).json({
@@ -56,6 +62,8 @@ module.exports = async (req, res, next) => {
 
     req.admin = {
       id: String(admin._id),
+      name: admin.name || "",
+      loginId: admin.loginId || "",
       email: admin.email,
       role: admin.role,
       loanAccess: admin.loanAccess,
