@@ -5,6 +5,7 @@ const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
+const { pushStatusUpdate } = require("./adminUpdate.service");
 const { nextFranchiseCode } = require("../../utils/sequence");
 const {
   FRANCHISE_STATUS,
@@ -118,7 +119,8 @@ const listFranchises = async ({ status, search, page, limit } = {}) => {
   const safeLimit = Math.min(Math.max(Number(limit) || 0, 0), 100) || 0;
   const pageNumber = Math.max(Number(page) || 1, 1);
 
-  const query = Franchise.find(filter).sort({ createdAt: -1 });
+  // Trail list payload me nahi (detail endpoint deta hai).
+  const query = Franchise.find(filter).select("-adminUpdates").sort({ createdAt: -1 });
   if (safeLimit > 0) query.skip((pageNumber - 1) * safeLimit).limit(safeLimit);
 
   return query;
@@ -136,7 +138,7 @@ const getFranchiseById = async (id) => {
   return franchise;
 };
 
-const approveFranchise = async (id) => {
+const approveFranchise = async (id, req) => {
   const franchise = await getFranchiseById(id);
 
   if (franchise.franchiseStatus === FRANCHISE_STATUS.APPROVED) {
@@ -155,12 +157,24 @@ const approveFranchise = async (id) => {
   franchise.franchiseApprovedAt = new Date();
   franchise.franchiseRejectedAt = null;
 
+  /*
+  Decision aur uska audit entry ek hi save me. Pehle status yahan save hota tha
+  aur trail controller me alag write hota tha: doosra write fail hone par record
+  approved dikhta, par trail me decision ka koi nishan na hota.
+  */
+  pushStatusUpdate(franchise, req, {
+    entity: "franchise",
+    tag: "verification",
+    status: FRANCHISE_STATUS.APPROVED,
+    text: `Franchise approved${franchise.franchiseId ? ` — login ID ${franchise.franchiseId}` : ""}`,
+  });
+
   await franchise.save();
 
   return withoutPassword(franchise);
 };
 
-const rejectFranchise = async (id, note) => {
+const rejectFranchise = async (id, note, req) => {
   const franchise = await getFranchiseById(id);
 
   if (franchise.franchiseStatus === FRANCHISE_STATUS.REJECTED) {
@@ -175,6 +189,14 @@ const rejectFranchise = async (id, note) => {
       adminNote: String(note).trim(),
     };
   }
+
+  /* Status + trail ek hi save me (dekho approveFranchise). */
+  pushStatusUpdate(franchise, req, {
+    entity: "franchise",
+    tag: "flag",
+    status: FRANCHISE_STATUS.REJECTED,
+    text: `Franchise rejected${note && String(note).trim() ? ` — ${String(note).trim()}` : ""}`,
+  });
 
   await franchise.save();
 

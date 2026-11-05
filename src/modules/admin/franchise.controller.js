@@ -1,4 +1,5 @@
 const franchiseService = require("./franchise.service");
+const { addEntityUpdate } = require("./adminUpdate.service");
 
 /*
 ==========================================
@@ -68,7 +69,8 @@ PATCH /api/admin/franchises/:id/approve
 */
 exports.approve = async (req, res, next) => {
   try {
-    const franchise = await franchiseService.approveFranchise(req.params.id);
+    /* Decision + uska trail ek hi save me service ke andar likhe jaate hain. */
+    const franchise = await franchiseService.approveFranchise(req.params.id, req);
 
     res.json({
       success: true,
@@ -89,7 +91,8 @@ PATCH /api/admin/franchises/:id/reject   { note? }
 exports.reject = async (req, res, next) => {
   try {
     const { note } = req.body ?? {};
-    const franchise = await franchiseService.rejectFranchise(req.params.id, note);
+    /* Decision + uska trail ek hi save me service ke andar. */
+    const franchise = await franchiseService.rejectFranchise(req.params.id, note, req);
 
     res.json({
       success: true,
@@ -114,6 +117,37 @@ exports.resetPassword = async (req, res, next) => {
       success: true,
       message: `Credentials reset. Login ID: ${franchise.franchiseId}`,
       credentials: franchiseService.buildCredentials(franchise),
+      franchise,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Add Franchise Update
+POST /api/admin/franchises/:id/updates
+Body: { text: string, tag?: string, suggestedStatus?: "Approved"|"Rejected" }
+
+Sirf REGULAR admin (super admin ko 403) — jaise loan application par hota hai.
+*/
+exports.addUpdate = async (req, res, next) => {
+  try {
+    const { text, tag, suggestedStatus } = req.body ?? {};
+    const franchise = await franchiseService.getFranchiseById(req.params.id);
+
+    addEntityUpdate(franchise, req, {
+      entity: "franchise",
+      text,
+      tag,
+      suggestedStatus,
+    });
+
+    await franchise.save();
+
+    res.json({
+      success: true,
+      message: "Update added successfully",
       franchise,
     });
   } catch (error) {

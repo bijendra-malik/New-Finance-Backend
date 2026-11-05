@@ -23,5 +23,7 @@ router.patch("/:id/approve", requireSuperAdmin, franchiseController.approve);
 router.patch("/:id/reject", requireSuperAdmin, franchiseController.reject);
 router.patch("/:id/reset-password", requireSuperAdmin, franchiseController.resetPassword);
 router.get("/:id/loans", requireSuperAdmin, franchiseController.loans);
+/* Regular admin likhta hai; super admin ko yahan 403 milta hai. */
+router.post("/:id/updates", franchiseController.addUpdate);
 
 module.exports = router;
