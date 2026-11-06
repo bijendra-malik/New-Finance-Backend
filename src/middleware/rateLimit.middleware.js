@@ -67,4 +67,26 @@ const locationLimiter = rateLimit({
   },
 });
 
-module.exports = { otpRequestLimiter, otpVerifyLimiter, adminLoginLimiter, locationLimiter };
+/*
+Public contact form — ek IP se 10 minute me 20 enquiries kaafi zyada hain, isliye
+thoda tight. Asli user 1-2 baar hi submit karta hai; ye sirf scripted spam rokta
+hai (dedupe alag se contact.service me hai).
+*/
+const contactLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many enquiries from this device. Please try again in a few minutes.",
+  },
+});
+
+module.exports = {
+  otpRequestLimiter,
+  otpVerifyLimiter,
+  adminLoginLimiter,
+  locationLimiter,
+  contactLimiter,
+};
