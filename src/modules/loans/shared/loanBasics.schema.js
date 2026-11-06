@@ -34,6 +34,39 @@ const SERVER_MANAGED_FIELD_NAMES = [
 ];/** Set by the admin panel (PATCH /{resource}/:id/status), never by an applicant. */
 const ADMIN_REVIEW_FIELD_NAMES = ["approvedBy", "approvedAt", "rejectedAt", "adminNote", "autoRejectedAt", "adminUpdates", "statusRecommendation"];
 
+/*
+==========================================
+Pending decision suggestion (sub-schema)
+
+Ye SUB-SCHEMA hai, plain nested object nahi — aur yahi asli bug tha.
+
+Nested object ki har field ka apna default hota hai, isliye Mongoose document
+save karte waqt poora block bana deta tha, chahe kisi ne kuch suggest hi na
+kiya ho:
+
+  statusRecommendation: { note: "", recommendedByName: "", recommendedByRole: "" }
+
+Natija: jis loan par regular admin sirf ek note likhta tha, wo loan DB me
+aisa dikhta tha jaise kisi ne decision SUGGEST kiya ho — bina status, bina
+naam, bina note. Aur final decision par `statusRecommendation = null` bhi
+tikta nahi tha, kyunki agle save par defaults wapas aa jaate the.
+
+Sub-schema + `default: null` se ab dono cheezein sahi hoti hain: block ya to
+poora hota hai ya null — beech ka khaali object kabhi nahi banta.
+==========================================
+*/
+const STATUS_RECOMMENDATION_SCHEMA = new mongoose.Schema(
+  {
+    status: { type: String, default: null },
+    note: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
+    recommendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
+    recommendedByName: { type: String, default: "" },
+    recommendedByRole: { type: String, default: "" },
+    recommendedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 /** Mongoose field objects shared by every loan product's schema. */
 const ADMIN_REVIEW_FIELDS = {
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
@@ -51,14 +84,7 @@ const ADMIN_REVIEW_FIELDS = {
   final decision; this is what the super admin sees on the dashboard and the
   application detail page so a review never gets lost in a comment thread.
   */
-  statusRecommendation: {
-    status: { type: String, default: null },
-    note: { type: String, default: "", maxlength: [500, "Note is too long (max 500 characters)"] },
-    recommendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
-    recommendedByName: { type: String, default: "" },
-    recommendedByRole: { type: String, default: "" },
-    recommendedAt: { type: Date, default: null },
-  },
+  statusRecommendation: { type: STATUS_RECOMMENDATION_SCHEMA, default: null },
   /*
   Admin updates/remarks added by any admin with access (regular admins can add updates,
   super admins can see all). Each entry tracks who added it and when.
