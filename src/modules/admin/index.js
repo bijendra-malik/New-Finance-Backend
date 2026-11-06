@@ -29,6 +29,13 @@ wahin 404 ho jata.
 */
 router.use("/activity", require("./adminActivity.routes"));
 
+/*
+Website contact form ki enquiries (GET list, PATCH status/note, DELETE).
+"/" wale application router se pehle mount hota hai, warna "/contacts" wahan
+404 ho jata.
+*/
+router.use("/contacts", require("../contact/contact.admin.routes"));
+
 router.use("/", adminAuth, require("./application.routes"));
 
 /*
