@@ -1,5 +1,7 @@
 const User = require("../auth/user.model");
 const Franchise = require("../franchise/franchise.model");
+const { MODELS, SETTABLE_STATUSES } = require("../loans/shared/loanStatus");
+const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { isSuperAdmin } = require("./adminLoanAccess");
 const { CUSTOMER_FILTER } = require("./customer.service");
 const {
@@ -184,16 +186,68 @@ const toPendingDecision = (entity, doc) => {
   };
 };
 
+/* Loan application par diya gaya suggestion — customers/franchises jaisa hi row. */
+const toLoanPendingDecision = (resource, entry, doc) => {
+  const recommendation = doc.statusRecommendation || {};
+  const latest = latestUpdateOf(doc);
+
+  return {
+    entity: "loan",
+    id: String(doc._id),
+    resource,
+    product: entry.productKey,
+    productLabel: entry.label,
+    name: doc.fullName || "",
+    referenceNo: doc.applicationNo || null,
+    mobile: doc.mobile || "",
+    loanAmount: typeof doc.loanAmount === "number" ? doc.loanAmount : null,
+    status: doc.status || "Submitted",
+    suggestedStatus: recommendation.status || latest?.suggestedStatus || null,
+    note: recommendation.note || latest?.text || "",
+    requestedByName: recommendation.recommendedByName || latest?.addedByName || "Admin",
+    requestedAt: recommendation.recommendedAt || latest?.addedAt || null,
+  };
+};
+
+/*
+Loan products ki pending suggestions.
+
+Pehle ye queue sirf customers aur franchises padhti thi, isliye regular admin
+loan par "approve / reject" SUGGEST karta tha aur wo suggestion record ke andar
+padi rehti thi — super admin ke dashboard par kabhi nahi aati thi. Loan ka final
+decision wahi super admin leta hai, isliye suggestions yahan bhi aani chahiye.
+*/
+const collectLoanPendingDecisions = async () => {
+  const batches = await Promise.all(
+    Object.entries(RESOURCE_ROUTES).map(async ([resource, entry]) => {
+      const Model = MODELS[entry.productKey];
+      if (!Model) return [];
+
+      const docs = await Model.find({
+        "statusRecommendation.status": { $in: SETTABLE_STATUSES },
+      })
+        .select("fullName mobile applicationNo status loanAmount adminUpdates statusRecommendation")
+        .sort({ "statusRecommendation.recommendedAt": -1 })
+        .limit(MAX_PENDING)
+        .lean();
+
+      return docs.map((doc) => toLoanPendingDecision(resource, entry, doc));
+    })
+  );
+
+  return batches.flat().slice(0, MAX_PENDING);
+};
+
 /**
- * Super admin ka "decision pending" queue: jin customers/franchises par kisi
- * regular admin ne decision suggest kiya hai aur abhi tak final decision nahi
- * hua. Escalation tag wali latest entry bhi yahan aati hai.
+ * Super admin ka "decision pending" queue: jin customers/franchises/loans par
+ * kisi regular admin ne decision suggest kiya hai aur abhi tak final decision
+ * nahi hua. Escalation tag wali latest entry bhi yahan aati hai.
  *
  * Filter me `$ne: null` ki jagah us entity ke allowed decisions likhe hain:
  * `$ne` index se poori range scan karta hai, `$in` seedha index lookup hai.
  */
 const collectPendingDecisions = async () => {
-  const [customers, franchises] = await Promise.all([
+  const [customers, franchises, loans] = await Promise.all([
     User.find({
       ...CUSTOMER_FILTER,
       "statusRecommendation.status": { $in: ENTITY_DECISIONS.customer },
@@ -209,11 +263,13 @@ const collectPendingDecisions = async () => {
       .sort({ "statusRecommendation.recommendedAt": -1 })
       .limit(MAX_PENDING)
       .lean(),
+    collectLoanPendingDecisions(),
   ]);
 
   const items = [
     ...customers.map((doc) => toPendingDecision("customer", doc)),
     ...franchises.map((doc) => toPendingDecision("franchise", doc)),
+    ...loans,
   ].sort(
     (left, right) =>
       new Date(right.requestedAt || 0) - new Date(left.requestedAt || 0)
