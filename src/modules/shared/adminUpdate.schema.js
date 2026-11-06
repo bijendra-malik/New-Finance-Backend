@@ -111,22 +111,35 @@ const adminUpdateFields = (entity) => {
   };
 };
 
+/*
+Ek field definition jo SUB-SCHEMA + `default: null` deta hai (plain nested
+object nahi). Nested object me har field ka apna default hone se Mongoose har
+save par khaali block likh deta tha — `{ note: "", recommendedByName: "" }` —
+jisse sirf note likha hua record bhi "decision suggested" jaisa dikhta tha, aur
+`statusRecommendation = null` agle save par defaults ke saath wapas aa jaata
+tha. Caller ise waise hi use karta hai: `statusRecommendation: statusRecommendationFields("customer")`.
+*/
 const statusRecommendationFields = (entity) => {
   const { tags, decisions } = entityConfig(entity);
 
-  return {
-    status: { type: String, enum: decisions, default: null },
-    note: {
-      type: String,
-      default: "",
-      maxlength: [MAX_UPDATE_TEXT, `Note is too long (max ${MAX_UPDATE_TEXT} characters)`],
+  const schema = new mongoose.Schema(
+    {
+      status: { type: String, enum: decisions, default: null },
+      note: {
+        type: String,
+        default: "",
+        maxlength: [MAX_UPDATE_TEXT, `Note is too long (max ${MAX_UPDATE_TEXT} characters)`],
+      },
+      tag: { type: String, enum: tags, default: "general" },
+      recommendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
+      recommendedByName: { type: String, default: "" },
+      recommendedByRole: { type: String, default: "" },
+      recommendedAt: { type: Date, default: null },
     },
-    tag: { type: String, enum: tags, default: "general" },
-    recommendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
-    recommendedByName: { type: String, default: "" },
-    recommendedByRole: { type: String, default: "" },
-    recommendedAt: { type: Date, default: null },
-  };
+    { _id: false }
+  );
+
+  return { type: schema, default: null };
 };
 
 module.exports = {
