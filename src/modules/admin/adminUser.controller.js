@@ -83,11 +83,13 @@ exports.resetPassword = async (req, res, next) => {
 // DELETE /api/admin/admins/:id
 exports.remove = async (req, res, next) => {
   try {
-    await adminUserService.deleteAdmin(req.params.id, req.admin.id);
+    const purged = await adminUserService.deleteAdmin(req.params.id, req.admin.id);
 
     res.json({
       success: true,
-      message: "Admin deleted successfully",
+      message: purged.removedFrom
+        ? `Admin deleted successfully along with their updates on ${purged.removedFrom} record(s)`
+        : "Admin deleted successfully",
     });
   } catch (error) {
     next(error);
