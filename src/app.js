@@ -85,6 +85,12 @@ app.use("/api/vehicle-loan", require("./modules/loans/vehicle-loan/vehicleLoan.r
 app.use("/api/education-loan", require("./modules/loans/education-loan/educationLoan.routes"));
 app.use("/api/credit-card", require("./modules/loans/credit-card/creditCard.routes"));
 
+/*
+Website contact form (public). Admin panel isi data ko /api/admin/contacts se
+padhta hai, isliye yahan sirf POST khula hai aur rate-limited hai.
+*/
+app.use("/api/contact", require("./modules/contact/contact.routes"));
+
 app.use("/api/masters", require("./modules/masters/master.routes"));
 app.use("/api/employment-types", require("./modules/masters/employmentType.routes"));
 
