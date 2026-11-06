@@ -189,8 +189,9 @@ const stats = async (req, res, next) => {
               loanAmount: doc.loanAmount ?? null,
               createdAt: doc.createdAt,
               adminUpdatesCount: Array.isArray(doc.adminUpdates) ? doc.adminUpdates.length : 0,
+              /* Trail newest-first hai — last update `[0]` hota hai, `[length-1]` nahi. */
               lastUpdateAt: Array.isArray(doc.adminUpdates) && doc.adminUpdates.length
-                ? doc.adminUpdates[doc.adminUpdates.length - 1]?.addedAt || doc.adminUpdates[0]?.addedAt
+                ? doc.adminUpdates[0]?.addedAt || null
                 : null,
             }));
           })
