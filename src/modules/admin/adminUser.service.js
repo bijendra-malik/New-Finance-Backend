@@ -1,5 +1,8 @@
 const bcrypt = require("bcryptjs");
 const Admin = require("./admin.model");
+const User = require("../auth/user.model");
+const Franchise = require("../franchise/franchise.model");
+const { MODELS } = require("../loans/shared/loanModels");
 const { isValidEmail } = require("../../utils/validators");
 const { LOAN_TYPE_SLUGS, LOAN_ACCESS_ALL } = require("../../constants/loanTypes");
 const { MODULE_ACCESS_KEYS, MODULE_ACCESS_ALL } = require("./adminLoanAccess");
@@ -260,6 +263,43 @@ const resetAdminPassword = async (id, password, actorId, currentPassword) => {
   await admin.save();
 };
 
+/*
+==========================================
+Admin delete = us admin ka kaam bhi delete
+
+`adminUpdates` entries record ke andar admin ka naam/id COPY karke rakhti hain
+(denormalised), isliye admin document delete hone par uska thread har record par
+pada reh jaata tha — team me wo admin nahi, par har loan par uske message.
+Phir naya regular admin banane par purana thread dekh kar confusion hoti thi.
+
+Isliye admin delete hote hi uske likhe hue updates sabhi 18 loan products,
+customers aur franchises se nikal diye jaate hain, aur uski di hui pending
+status recommendation bhi clear ho jaati hai. Baaki admins ka kaam (aur final
+decisions, `kind: "status"`) waise hi rehta hai.
+==========================================
+*/
+const purgeAdminTrail = async (adminId) => {
+  const withTrail = [...Object.values(MODELS), User, Franchise];
+  let removedFrom = 0;
+  let clearedRecommendations = 0;
+
+  for (const Model of withTrail) {
+    const pulled = await Model.updateMany(
+      { "adminUpdates.addedBy": adminId },
+      { $pull: { adminUpdates: { addedBy: adminId } } }
+    );
+    removedFrom += pulled.modifiedCount;
+
+    const cleared = await Model.updateMany(
+      { "statusRecommendation.recommendedBy": adminId },
+      { $set: { statusRecommendation: null } }
+    );
+    clearedRecommendations += cleared.modifiedCount;
+  }
+
+  return { removedFrom, clearedRecommendations };
+};
+
 const deleteAdmin = async (id, actorId) => {
   const admin = await Admin.findById(id);
   if (!admin) throw notFound();
@@ -272,7 +312,11 @@ const deleteAdmin = async (id, actorId) => {
     throw badRequest("At least one super admin must remain");
   }
 
+  /* Pehle trail saaf, phir admin — purge fail ho to account bacha rahe. */
+  const purged = await purgeAdminTrail(admin._id);
   await Admin.deleteOne({ _id: admin._id });
+
+  return purged;
 };
 
 module.exports = {
@@ -283,4 +327,5 @@ module.exports = {
   updateAdmin,
   resetAdminPassword,
   deleteAdmin,
+  purgeAdminTrail,
 };
