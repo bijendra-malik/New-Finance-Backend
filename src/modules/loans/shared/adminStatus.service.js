@@ -119,6 +119,32 @@ const modelFor = (resource) => {
 
 const labelFor = (resource) => RESOURCE_ROUTES[resource]?.label;
 
+/*
+Admin UI ke liye ek hi shape — direct customer aur franchise application ka farq
+saaf rahe.
+
+`franchise` / `franchiseCode` / `franchiseCustomer` teeno `null` padte hain jab
+customer ne khud apply kiya ho (`visibleLoanFilter` direct applications ko
+`franchise: null` se pehchanta hai). Admin panel un fields ko dekh kar franchise
+ka card / section render kar deta hai, jo normal customer ke loan par nahi hona
+chahiye. Isliye direct application par ye fields response se hata dete hain;
+franchise se aayi application par waise hi rehte hain. `applicationSource` dono
+case me channel saaf batata hai.
+*/
+const FRANCHISE_LINK_FIELDS = ["franchise", "franchiseCode", "franchiseCustomer"];
+
+const toAdminLoanView = (doc) => {
+  const loan = typeof doc?.toObject === "function" ? doc.toObject() : { ...doc };
+  const fromFranchise = Boolean(loan.franchise);
+
+  if (!fromFranchise) {
+    FRANCHISE_LINK_FIELDS.forEach((field) => delete loan[field]);
+  }
+
+  loan.applicationSource = fromFranchise ? "franchise-customer" : "customer";
+  return loan;
+};
+
 /** GET /api/admin/{resource} — newest first. */
 const getListHandler = (resource) => async (req, res, next) => {
   try {
@@ -147,7 +173,7 @@ const getByIdHandler = (resource) => async (req, res, next) => {
     if (!application)
       throw notFound(`${labelFor(resource)} application not found`);
 
-    res.status(200).json({ success: true, loan: application });
+    res.status(200).json({ success: true, loan: toAdminLoanView(application) });
   } catch (error) {
     next(error);
   }
@@ -275,7 +301,7 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
     res.json({
       success: true,
       message: `${labelFor(resource)} application marked ${status.toLowerCase()}`,
-      loan: application,
+      loan: toAdminLoanView(application),
     });
   } catch (error) {
     next(error);
@@ -363,7 +389,7 @@ const addUpdateHandler = (resource) => async (req, res, next) => {
     res.json({
       success: true,
       message: "Update added successfully",
-      loan: application,
+      loan: toAdminLoanView(application),
     });
   } catch (error) {
     next(error);
