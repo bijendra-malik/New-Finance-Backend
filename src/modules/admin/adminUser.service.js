@@ -6,6 +6,14 @@ const { MODELS } = require("../loans/shared/loanModels");
 const { isValidEmail } = require("../../utils/validators");
 const { LOAN_TYPE_SLUGS, LOAN_ACCESS_ALL } = require("../../constants/loanTypes");
 const { MODULE_ACCESS_KEYS, MODULE_ACCESS_ALL } = require("./adminLoanAccess");
+const {
+  ADMIN_ROLE,
+  ADMIN_PERMISSION_KEYS,
+  DEFAULT_SUB_ADMIN_PERMISSIONS,
+  appliesToScope,
+  filterPermissionsForScope,
+  normalizePermissions,
+} = require("../../constants/adminPermissions");
 
 /*
 ==========================================
@@ -24,8 +32,9 @@ Rules jo service khud enforce karta hai (frontend par bharosa nahi):
 */
 
 const ROLE = {
-  SUPER: "SuperAdmin",
-  ADMIN: "Admin",
+  SUPER: ADMIN_ROLE.SUPER,
+  SUB: ADMIN_ROLE.SUB,
+  ADMIN: ADMIN_ROLE.ADMIN,
 };
 
 const LOGIN_ID_REGEX = /^[a-z0-9][a-z0-9._-]{2,23}$/i;
@@ -48,8 +57,9 @@ const normalizeRole = (value, fallback = ROLE.ADMIN) => {
   if (value === undefined || value === null || value === "") return fallback;
   const raw = String(value).trim();
   if (/^super[_\s-]?admin$/i.test(raw)) return ROLE.SUPER;
+  if (/^sub[_\s-]?admin$/i.test(raw)) return ROLE.SUB;
   if (/^admin$/i.test(raw)) return ROLE.ADMIN;
-  throw badRequest("Role must be Admin or SuperAdmin");
+  throw badRequest("Role must be Admin, SubAdmin or SuperAdmin");
 };
 
 const normalizeLoanAccess = (value, role) => {
@@ -82,6 +92,78 @@ const normalizeModuleAccess = (value, role) => {
     throw badRequest(`Unknown module(s): ${invalid.join(", ")}`);
   }
   return unique;
+};
+
+/* ------------------------------ sub-admin scope ------------------------------ */
+
+const hasLoanScope = (loanAccess) =>
+  loanAccess === LOAN_ACCESS_ALL ||
+  (Array.isArray(loanAccess) && loanAccess.length > 0);
+
+const hasModuleScope = (moduleAccess) =>
+  moduleAccess === MODULE_ACCESS_ALL ||
+  (Array.isArray(moduleAccess) && moduleAccess.length > 0);
+
+/**
+ * Sub admin ka scope wahi hai jo regular admin ka access hota hai:
+ * Loan products YA Customers & Franchises. Dono ek saath nahi — warna
+ * dashboard aur review queue ka matlab hi ambiguous ho jaata hai.
+ */
+const scopeOf = ({ loanAccess, moduleAccess } = {}) => {
+  const loans = hasLoanScope(loanAccess);
+  const modules = hasModuleScope(moduleAccess);
+
+  if (loans && modules) {
+    throw badRequest(
+      "Sub admin ka scope ek hi ho sakta hai: loan products ya customers / franchises"
+    );
+  }
+  if (modules) return "modules";
+  if (loans) return "loans";
+  return null;
+};
+
+/**
+ * Sub admin permissions ko uske scope se bandhte hain:
+ *   - scope ke bahar ki permission request 400,
+ *   - chuni hui scope me kam se kam ek permission zaroori,
+ *   - `loans.decide` sirf loan scope me.
+ * SuperAdmin ke paas hamesha poori list hoti hai; regular admin ke paas kuch nahi.
+ */
+const resolvePermissions = (value, role, access) => {
+  if (role === ROLE.SUPER) return ADMIN_PERMISSION_KEYS;
+  if (role !== ROLE.SUB) return [];
+
+  const scope = scopeOf(access);
+  if (!scope) {
+    throw badRequest(
+      "Sub admin ke liye scope chuno: loan products ya customers / franchises"
+    );
+  }
+
+  const provided = value === undefined || value === null;
+  const requested = provided
+    ? DEFAULT_SUB_ADMIN_PERMISSIONS
+    : normalizePermissions(value);
+
+  const outOfScope = provided
+    ? []
+    : requested.filter((key) => !appliesToScope(key, scope));
+  if (outOfScope.length) {
+    throw badRequest(
+      `Ye permission is scope me nahi hai: ${outOfScope.join(", ")}`
+    );
+  }
+
+  const scoped = filterPermissionsForScope(requested, scope);
+  if (!scoped.length) {
+    throw badRequest(
+      `Kam se kam ek permission chuno (${
+        scope === "loans" ? "loan products" : "customers / franchises"
+      } scope)`
+    );
+  }
+  return scoped;
 };
 
 const deriveLoginId = (email) => String(email ?? "").split("@")[0].toLowerCase();
@@ -125,7 +207,8 @@ ka hota hai, super admins isme nahi gine jaate.
 ==========================================
 */
 const assertAdminSeat = async () => {
-  const used = await Admin.countDocuments({ role: ROLE.ADMIN });
+  // Sub admins bhi super admin ke banaye seats hain, isliye limit me ginte hain.
+  const used = await Admin.countDocuments({ role: { $in: [ROLE.ADMIN, ROLE.SUB] } });
   if (used >= MAX_REGULAR_ADMINS) {
     throw badRequest(
       `Limit reached: only ${MAX_REGULAR_ADMINS} regular admins can be created. Delete one to add another.`
@@ -149,6 +232,10 @@ const toPublic = (admin) => {
     name: doc.name,
     email: doc.email,
     role: doc.role,
+    permissions:
+      doc.role === ROLE.SUPER
+        ? ADMIN_PERMISSION_KEYS
+        : normalizePermissions(doc.permissions),
     loanAccess: doc.role === ROLE.SUPER ? LOAN_ACCESS_ALL : doc.loanAccess ?? [],
     moduleAccess: doc.role === ROLE.SUPER ? MODULE_ACCESS_ALL : doc.moduleAccess ?? [],
     isActive: doc.isActive !== false,
@@ -165,7 +252,16 @@ const listAdmins = async () => {
   return admins.map(toPublic);
 };
 
-const createAdmin = async ({ loginId, name, email, password, role, loanAccess, moduleAccess }) => {
+const createAdmin = async ({
+  loginId,
+  name,
+  email,
+  password,
+  role,
+  loanAccess,
+  moduleAccess,
+  permissions,
+}) => {
   const cleanName = String(name ?? "").trim();
   if (cleanName.length < 2) throw badRequest("Name is required");
   if (cleanName.length > 100) throw badRequest("Name is too long (max 100 characters)");
@@ -174,12 +270,17 @@ const createAdmin = async ({ loginId, name, email, password, role, loanAccess, m
 
   const cleanEmail = await assertEmail(email);
   const cleanRole = normalizeRole(role);
-  if (cleanRole === ROLE.ADMIN) await assertAdminSeat();
+  // Super admin seats unlimited; Admin aur SubAdmin dono 25 ki limit me.
+  if (cleanRole !== ROLE.SUPER) await assertAdminSeat();
   const cleanLoginId = await assertLoginId(
     String(loginId ?? "").trim() || deriveLoginId(cleanEmail)
   );
   const access = normalizeLoanAccess(loanAccess, cleanRole);
   const modAccess = normalizeModuleAccess(moduleAccess, cleanRole);
+  const grantedPermissions = resolvePermissions(permissions, cleanRole, {
+    loanAccess: access,
+    moduleAccess: modAccess,
+  });
 
   const admin = await Admin.create({
     name: cleanName,
@@ -189,6 +290,7 @@ const createAdmin = async ({ loginId, name, email, password, role, loanAccess, m
     role: cleanRole,
     loanAccess: access,
     moduleAccess: modAccess,
+    permissions: grantedPermissions,
   });
 
   return toPublic(admin);
@@ -228,6 +330,30 @@ const updateAdmin = async (id, patch = {}, actorId) => {
   }
   if (patch.moduleAccess !== undefined || nextRole === ROLE.SUPER || demotingSuperAdmin) {
     admin.moduleAccess = normalizeModuleAccess(patch.moduleAccess, nextRole);
+  }
+
+  /*
+  Permissions role ke saath rehta hai: sub admin ke liye scope ke andar,
+  baaki roles ke liye khaali (SuperAdmin ko computed poori list milti hai).
+  Purane sub-admin documents me permissions khaali ho sakti hain — tab default
+  review loop lagta hai, warna har edit 400 deta.
+  */
+  if (nextRole === ROLE.SUPER) {
+    admin.permissions = ADMIN_PERMISSION_KEYS;
+  } else if (nextRole === ROLE.SUB) {
+    const current = normalizePermissions(admin.permissions);
+    const source =
+      patch.permissions === undefined
+        ? current.length
+          ? current
+          : undefined
+        : patch.permissions;
+    admin.permissions = resolvePermissions(source, nextRole, {
+      loanAccess: admin.loanAccess,
+      moduleAccess: admin.moduleAccess,
+    });
+  } else {
+    admin.permissions = [];
   }
 
   await admin.save();
@@ -322,6 +448,8 @@ const deleteAdmin = async (id, actorId) => {
 module.exports = {
   ROLE,
   MAX_REGULAR_ADMINS,
+  scopeOf,
+  resolvePermissions,
   listAdmins,
   createAdmin,
   updateAdmin,
