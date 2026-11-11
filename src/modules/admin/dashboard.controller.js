@@ -7,10 +7,12 @@ const {
   hasModuleAccess,
   hasProductAccess,
   isSuperAdmin,
+  isSubAdmin,
   visibleLoanFilter,
 } = require("./adminLoanAccess");
 const { ENTITY_PRODUCTS, collectEntityUpdates } = require("./adminActivity.service");
 const { collectPendingDecisions } = require("./adminUpdate.service");
+const { buildSupervisorDashboard } = require("./supervisorDashboard.service");
 
 /*
 ==========================================
@@ -25,6 +27,16 @@ const ROUND = 2;
 
 const stats = async (req, res, next) => {
   try {
+    /*
+    Sub admin ka dashboard alag hai: loan product charts nahi, review queue aur
+    supervision counts. Isliye loan-dashboard access check se pehle hi branch
+    ho jaata hai — warna module-scope supervisor ko 403 milta tha.
+    */
+    if (isSubAdmin(req.admin)) {
+      const supervisor = await buildSupervisorDashboard(req.admin);
+      return res.json({ success: true, stats: supervisor });
+    }
+
     const canViewLoanDashboard =
       isSuperAdmin(req.admin) ||
       Object.values(RESOURCE_ROUTES).some((entry) =>
