@@ -4,7 +4,13 @@ const Franchise = require("../franchise/franchise.model");
 const { CUSTOMER_FILTER } = require("./customer.service");
 const { MODELS } = require("../loans/shared/loanStatus");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
-const { PRODUCT_ACCESS_SLUGS } = require("./adminLoanAccess");
+const {
+  PRODUCT_ACCESS_SLUGS,
+  hasProductAccess,
+  hasModuleAccess,
+  isSuperAdmin,
+  isSubAdmin,
+} = require("./adminLoanAccess");
 
 /*
 ==========================================
@@ -203,7 +209,7 @@ const collectEntityUpdates = async (product, since) => {
     .filter((row) => !(row.adminRole === "SuperAdmin" && row.kind !== "status"));
 };
 
-const listActivity = async (query = {}) => {
+const listActivity = async (query = {}, viewer = null) => {
   const days = toInt(query.days, DEFAULT_DAYS, 0, MAX_DAYS);
   const limit = toInt(query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const since = days > 0 ? new Date(Date.now() - days * MS_PER_DAY) : null;
@@ -211,14 +217,36 @@ const listActivity = async (query = {}) => {
   const adminId = isObjectId(query.adminId) ? String(query.adminId) : null;
   const product = resolveProduct(query.product);
 
-  // All products are read on purpose: the per-product counts must not collapse
-  // when one product is selected. The selection only narrows the visible list.
+  /*
+  Super admin ko poori organisation dikhti hai; restricted admin / sub admin
+  ko sirf apna scope — warna activity feed doosre products ke counts leak karti.
+  */
+  const visibleProducts =
+    viewer && !isSuperAdmin(viewer)
+      ? PRODUCTS.filter((entry) => hasProductAccess(viewer, entry.productKey))
+      : PRODUCTS;
+  const visibleEntities =
+    viewer && !isSuperAdmin(viewer)
+      ? ENTITY_PRODUCTS.filter((entry) => hasModuleAccess(viewer, entry.productKey))
+      : ENTITY_PRODUCTS;
+
+  // Counts must not collapse when one product is selected; the filter only
+  // narrows the visible list, not the aggregate.
   const batches = await Promise.all([
-    ...PRODUCTS.map((entry) => collectProductUpdates(entry, since)),
-    ...ENTITY_PRODUCTS.map((entry) => collectEntityUpdates(entry, since)),
+    ...visibleProducts.map((entry) => collectProductUpdates(entry, since)),
+    ...visibleEntities.map((entry) => collectEntityUpdates(entry, since)),
   ]);
 
-  const all = batches.flat().sort((left, right) => right.addedAtMs - left.addedAtMs);
+  /*
+  Sub admin regular admins ka kaam review karta hai — uski feed me super admin
+  ke decisions aur doosre sub admins ke kaam nahi aate, warna "needs review"
+  queue me wo cheezein aa jaati hain jo uske role ka hissa nahi hain.
+  */
+  const allRows = batches.flat().sort((left, right) => right.addedAtMs - left.addedAtMs);
+  const all =
+    viewer && isSubAdmin(viewer)
+      ? allRows.filter((row) => !/super|sub/i.test(row.adminRole || ""))
+      : allRows;
 
   const adminTotals = new Map();
   const adminNames = new Map();
@@ -233,8 +261,14 @@ const listActivity = async (query = {}) => {
     productTotals.set(row.productKey, (productTotals.get(row.productKey) || 0) + 1);
   });
 
-  const adminDocs = await Admin.find().select("name email loginId role").lean();
-  const admins = adminDocs.map((doc) => {
+  const adminDocs = await Admin.find()
+    .select("name email loginId role")
+    .lean();
+  const adminRows =
+    viewer && isSubAdmin(viewer)
+      ? adminDocs.filter((doc) => !/super|sub/i.test(doc.role || ""))
+      : adminDocs;
+  const admins = adminRows.map((doc) => {
     const id = String(doc._id);
     return {
       id,
@@ -273,7 +307,7 @@ const listActivity = async (query = {}) => {
     lastActivityAt: all[0]?.addedAt || null,
     updates: visible.slice(0, limit).map(({ addedAtMs, ...row }) => row),
     admins,
-    products: [...PRODUCTS, ...ENTITY_PRODUCTS].map((entry) => ({
+    products: [...visibleProducts, ...visibleEntities].map((entry) => ({
       key: entry.productKey,
       slug: entry.slug,
       label: entry.label,
