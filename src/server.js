@@ -11,7 +11,11 @@ connectDB();
 /* ============================
    Server
 ============================ */
-const PORT = process.env.PORT || 5000;
+/*
+`PORT=0` par express random port chun leta hai — admin panel hamesha 5000 par
+request bhejta hai, isliye khaali/zero value ko default maana jaata hai.
+*/
+const PORT = Number(process.env.PORT) || 5000;
 
 app.listen(PORT, () => {
 
