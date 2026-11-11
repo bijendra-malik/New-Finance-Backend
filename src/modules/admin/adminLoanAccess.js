@@ -22,7 +22,13 @@ const PRODUCT_ACCESS_SLUGS = {
 const MODULE_ACCESS_KEYS = ["customers", "franchises"];
 const MODULE_ACCESS_ALL = "all";
 
+const {
+  ADMIN_PERMISSION_KEYS,
+  normalizePermissions,
+} = require("../../constants/adminPermissions");
+
 const isSuperAdmin = (admin) => admin?.role === "SuperAdmin";
+const isSubAdmin = (admin) => admin?.role === "SubAdmin";
 
 const hasLoanAccess = (admin, slug) =>
   isSuperAdmin(admin) ||
@@ -91,15 +97,81 @@ const requireModuleAccess = (moduleKey) => (req, res, next) => {
   });
 };
 
+/* --------------------------- sub-admin capabilities --------------------------- */
+
+/** SuperAdmin ke paas hamesha sab; regular admin ke paas kuch bhi nahi. */
+const permissionsOf = (admin) => {
+  if (!admin) return [];
+  if (isSuperAdmin(admin)) return ADMIN_PERMISSION_KEYS;
+  if (!isSubAdmin(admin)) return [];
+  return normalizePermissions(admin.permissions);
+};
+
+const hasPermission = (admin, key) => permissionsOf(admin).includes(key);
+
+/** `"loans"`, `"modules"` ya `null` — sub admin ka kaam kis side ka hai. */
+const adminScope = (admin) => {
+  if (!admin || isSuperAdmin(admin)) return "all";
+  if (hasModuleAccess(admin, "customers") || hasModuleAccess(admin, "franchises")) {
+    return "modules";
+  }
+  if (
+    admin.loanAccess === "all" ||
+    (Array.isArray(admin.loanAccess) && admin.loanAccess.length > 0)
+  ) {
+    return "loans";
+  }
+  return null;
+};
+
+/**
+ * Route guard for a specific capability. `req.admin.permissions` auth middleware
+ * se aata hai (DB se fresh), isliye purane token me permission change nahi
+ * dikhti — role change jaisa hi behaviour.
+ */
+const requirePermission = (key) => (req, res, next) => {
+  if (hasPermission(req.admin, key)) return next();
+
+  return res.status(403).json({
+    success: false,
+    message: "You do not have permission to perform this action",
+  });
+};
+
+/**
+ * Sub admin ka kaam sirf padhna + review karna hai. Records (loan applications,
+ * customers, franchises, masters) par likhna uske role ka hissa nahi hai.
+ * Review routes alag mount hote hain, isliye unke POST/DELETE is guard se
+ * affect nahi hote.
+ */
+const readOnlyForSubAdmin = (req, res, next) => {
+  if (!isSubAdmin(req.admin)) return next();
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    message:
+      "Sub admins can only review admin work — records cannot be edited from this account",
+  });
+};
+
 module.exports = {
   PRODUCT_ACCESS_SLUGS,
   MODULE_ACCESS_KEYS,
   MODULE_ACCESS_ALL,
   isSuperAdmin,
+  isSubAdmin,
+  permissionsOf,
+  hasPermission,
+  adminScope,
   hasLoanAccess,
   hasProductAccess,
   hasModuleAccess,
   visibleLoanFilter,
   requireLoanAccess,
   requireModuleAccess,
+  requirePermission,
+  readOnlyForSubAdmin,
 };

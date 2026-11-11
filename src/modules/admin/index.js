@@ -2,7 +2,7 @@ const router = require("express").Router();
 
 const adminAuth = require("../../middleware/adminAuth.middleware");
 const requireSuperAdmin = require("../../middleware/requireSuperAdmin.middleware");
-const { requireModuleAccess } = require("./adminLoanAccess");
+const { requireModuleAccess, readOnlyForSubAdmin } = require("./adminLoanAccess");
 
 /*
 ========================================
@@ -13,6 +13,13 @@ and kept isolated from the public/user-facing API.
 */
 
 router.use("/auth", require("./adminAuth.routes"));
+
+/*
+Sub-admin review queue. "/" application router se PEHLE mount hota hai — warna
+"/reviews" wahan 404 ho jata, aur sub admin ke paas likhne ka ek hi legitimate
+surface yahi hai (isliye readOnlyForSubAdmin ise block nahi karta).
+*/
+router.use("/reviews", require("./adminReview.routes"));
 
 /*
 Admin team (super admin only) — naye admin logins + unka loan access.
@@ -36,7 +43,7 @@ Website contact form ki enquiries (GET list, PATCH status/note, DELETE).
 */
 router.use("/contacts", require("../contact/contact.admin.routes"));
 
-router.use("/", adminAuth, require("./application.routes"));
+router.use("/", adminAuth, readOnlyForSubAdmin, require("./application.routes"));
 
 /*
 Location Master owns its own relational collections (continents, countries,
@@ -44,13 +51,30 @@ states, cities, pincodes) and lives in src/modules/location. It must be
 mounted BEFORE "/masters" so "/masters/location" is not swallowed by the
 generic master routes.
 */
-router.use("/masters/location", adminAuth, require("../location/location.routes"));
+router.use(
+  "/masters/location",
+  adminAuth,
+  readOnlyForSubAdmin,
+  require("../location/location.routes")
+);
 
-router.use("/masters", adminAuth, require("./master.routes"));
+router.use("/masters", adminAuth, readOnlyForSubAdmin, require("./master.routes"));
 
-router.use("/customers", adminAuth, requireModuleAccess("customers"), require("./customer.routes"));
+router.use(
+  "/customers",
+  adminAuth,
+  readOnlyForSubAdmin,
+  requireModuleAccess("customers"),
+  require("./customer.routes")
+);
 
-router.use("/franchises", adminAuth, requireModuleAccess("franchises"), require("./franchise.routes"));
+router.use(
+  "/franchises",
+  adminAuth,
+  readOnlyForSubAdmin,
+  requireModuleAccess("franchises"),
+  require("./franchise.routes")
+);
 
 /*
 Franchise investment plans — admin yahan fee / validity / renewal edit karta
