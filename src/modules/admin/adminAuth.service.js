@@ -8,6 +8,10 @@ const { isValidEmail, isStrongPassword } = require("../../utils/validators");
 const { freshOtp } = require("../../utils/otp");
 const { LOAN_ACCESS_ALL } = require("../../constants/loanTypes");
 const { MODULE_ACCESS_ALL } = require("./adminLoanAccess");
+const {
+  ADMIN_PERMISSION_KEYS,
+  normalizePermissions,
+} = require("../../constants/adminPermissions");
 
 const badRequest = (message) => {
   const error = new Error(message);
@@ -72,6 +76,15 @@ const authenticateAdmin = async (email, password) => {
     admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
   safeAdmin.moduleAccess =
     admin.role === "SuperAdmin" ? MODULE_ACCESS_ALL : admin.moduleAccess ?? [];
+  /*
+  Sub admin ka UI isi list se buttons gate karta hai. Login response me
+  permissions na hone ki wajah se pehle supervisor ko kuch bhi nahi milta tha
+  aur role sirf localStorage override se banta tha.
+  */
+  safeAdmin.permissions =
+    admin.role === "SuperAdmin"
+      ? ADMIN_PERMISSION_KEYS
+      : normalizePermissions(admin.permissions);
 
   return { token, admin: safeAdmin };
 };
@@ -87,6 +100,10 @@ const getAdminById = async (id) => {
 
   admin.loanAccess = admin.role === "SuperAdmin" ? LOAN_ACCESS_ALL : admin.loanAccess ?? [];
   admin.moduleAccess = admin.role === "SuperAdmin" ? MODULE_ACCESS_ALL : admin.moduleAccess ?? [];
+  admin.permissions =
+    admin.role === "SuperAdmin"
+      ? ADMIN_PERMISSION_KEYS
+      : normalizePermissions(admin.permissions);
   return admin;
 };
 

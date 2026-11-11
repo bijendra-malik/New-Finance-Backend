@@ -43,7 +43,7 @@ module.exports = async (req, res, next) => {
     asli naam dikhana hai — customer/franchise updates aur loans dono.
     */
     const admin = await Admin.findById(decoded.id).select(
-      "name loginId email role loanAccess moduleAccess isActive"
+      "name loginId email role loanAccess moduleAccess permissions isActive"
     );
 
     if (!admin) {
@@ -68,6 +68,7 @@ module.exports = async (req, res, next) => {
       role: admin.role,
       loanAccess: admin.loanAccess,
       moduleAccess: admin.moduleAccess,
+      permissions: admin.permissions,
     };
 
     return next();
