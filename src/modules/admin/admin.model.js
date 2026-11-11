@@ -35,10 +35,25 @@ const adminSchema = new mongoose.Schema(
       select: false,
     },
 
+    /*
+    SuperAdmin  -> poora panel
+    SubAdmin    -> sirf super admin ke diye permissions ke andar review kaam
+    Admin       -> regular operations admin
+    */
     role: {
       type: String,
-      enum: ["SuperAdmin", "Admin"],
+      enum: ["SuperAdmin", "SubAdmin", "Admin"],
       default: "Admin",
+    },
+
+    /*
+    Sub admin capabilities (`updates.view`, `updates.review`, `loans.decide`, …).
+    Regular admins ke liye khaali rehti hai; SuperAdmin ke paas hamesha sab kuch
+    hota hai (service compute karti hai, field par bharosa nahi).
+    */
+    permissions: {
+      type: [String],
+      default: [],
     },
 
     /*
@@ -86,6 +101,9 @@ Database Indexes for Performance
 
 // Admin login and status checks
 adminSchema.index({ isActive: 1, role: 1 });
+
+// Sub admins are listed/looked up by role in the team screen
+adminSchema.index({ role: 1, createdAt: 1 });
 
 // Recent login tracking
 adminSchema.index({ lastLogin: -1 });
