@@ -24,6 +24,24 @@ exports.list = async (req, res, next) => {
   }
 };
 
+/*
+Mera feedback — kisi bhi admin ke apne updates par hue reviews.
+Ye usi ka data hai, isliye koi capability nahi chahiye; service sirf
+`updateAdminId = me` wale records deti hai.
+*/
+exports.mine = async (req, res, next) => {
+  try {
+    const result = await adminReviewService.listReceivedReviews(
+      req.admin,
+      req.query ?? {}
+    );
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.summary = async (req, res, next) => {
   try {
     const summary = await adminReviewService.summary(req.admin, req.query ?? {});
