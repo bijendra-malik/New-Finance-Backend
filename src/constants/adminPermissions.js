@@ -23,14 +23,6 @@ const ADMIN_ROLE = {
   ADMIN: "Admin",
 };
 
-const ADMIN_ROLE_VALUES = Object.values(ADMIN_ROLE);
-
-const ADMIN_ROLE_LABELS = {
-  [ADMIN_ROLE.SUPER]: "Super admin",
-  [ADMIN_ROLE.SUB]: "Sub admin",
-  [ADMIN_ROLE.ADMIN]: "Admin",
-};
-
 const PERMISSION_SCOPE = {
   LOANS: "loans",
   MODULES: "modules",
@@ -106,9 +98,6 @@ const appliesToScope = (key, scope) => {
   return def.scope === PERMISSION_SCOPE.BOTH || def.scope === scope;
 };
 
-const permissionsForScope = (scope) =>
-  ADMIN_PERMISSIONS.filter((entry) => appliesToScope(entry.key, scope));
-
 /** Dedupe + drop unknown keys; never widen access from a bad payload. */
 const normalizePermissions = (value) => {
   if (!Array.isArray(value)) return [];
@@ -122,26 +111,34 @@ const normalizePermissions = (value) => {
   }, []);
 };
 
-const filterPermissionsForScope = (value, scope) =>
-  normalizePermissions(value).filter((key) => appliesToScope(key, scope));
+/*
+Ek sub admin ko dono areas mil sakte hain — loan products aur Customers /
+Franchises. Tab permission tab valid hai jab wo chune hue kisi bhi area par
+lagti ho. `both` wali permissions hamesha valid hain.
+*/
+const appliesToAnyScope = (key, scopes = []) => {
+  const def = permissionDef(key);
+  if (!def || !Array.isArray(scopes) || scopes.length === 0) return false;
+  return def.scope === PERMISSION_SCOPE.BOTH || scopes.includes(def.scope);
+};
+
+const filterPermissionsForScopes = (value, scopes) =>
+  normalizePermissions(value).filter((key) => appliesToAnyScope(key, scopes));
 
 const isSubAdminRole = (role) => role === ADMIN_ROLE.SUB;
 const isSuperAdminRole = (role) => role === ADMIN_ROLE.SUPER;
 
 module.exports = {
   ADMIN_ROLE,
-  ADMIN_ROLE_VALUES,
-  ADMIN_ROLE_LABELS,
   PERMISSION_SCOPE,
   ADMIN_PERMISSIONS,
   ADMIN_PERMISSION_KEYS,
   DEFAULT_SUB_ADMIN_PERMISSIONS,
   permissionDef,
-  isKnownPermission,
   appliesToScope,
-  permissionsForScope,
+  appliesToAnyScope,
   normalizePermissions,
-  filterPermissionsForScope,
+  filterPermissionsForScopes,
   isSubAdminRole,
   isSuperAdminRole,
 };
