@@ -109,18 +109,17 @@ const permissionsOf = (admin) => {
 
 const hasPermission = (admin, key) => permissionsOf(admin).includes(key);
 
-/** `"loans"`, `"modules"` ya `null` — sub admin ka kaam kis side ka hai. */
+/** `"loans"`, `"modules"`, `"both"` ya `null` — sub admin ke areas. */
 const adminScope = (admin) => {
   if (!admin || isSuperAdmin(admin)) return "all";
-  if (hasModuleAccess(admin, "customers") || hasModuleAccess(admin, "franchises")) {
-    return "modules";
-  }
-  if (
+  const modules =
+    hasModuleAccess(admin, "customers") || hasModuleAccess(admin, "franchises");
+  const loans =
     admin.loanAccess === "all" ||
-    (Array.isArray(admin.loanAccess) && admin.loanAccess.length > 0)
-  ) {
-    return "loans";
-  }
+    (Array.isArray(admin.loanAccess) && admin.loanAccess.length > 0);
+  if (modules && loans) return "both";
+  if (modules) return "modules";
+  if (loans) return "loans";
   return null;
 };
 
