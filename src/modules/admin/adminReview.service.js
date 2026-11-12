@@ -73,22 +73,31 @@ const scopeFilterFor = (admin) => {
   if (!admin) return { scopeKey: "none" };
 
   const scope = adminScope(admin);
-  if (scope === "modules") {
-    return { scopeKey: "modules", entity: { $in: moduleEntitiesFor(admin) } };
-  }
-  if (scope === "loans") {
-    if (admin.loanAccess === "all") return { scopeKey: "loans" };
-    const slugs = Array.isArray(admin.loanAccess) ? admin.loanAccess : [];
-    return { scopeKey: "loans", slug: { $in: slugs } };
-  }
+  const loansFilter =
+    admin.loanAccess === "all"
+      ? { scopeKey: "loans" }
+      : {
+          scopeKey: "loans",
+          slug: { $in: Array.isArray(admin.loanAccess) ? admin.loanAccess : [] },
+        };
+  const modulesFilter = {
+    scopeKey: "modules",
+    entity: { $in: moduleEntitiesFor(admin) },
+  };
+
+  /* Dono areas: loans aur modules ke records ek saath dikhte hain. */
+  if (scope === "both") return { $or: [loansFilter, modulesFilter] };
+  if (scope === "modules") return modulesFilter;
+  if (scope === "loans") return loansFilter;
   return { scopeKey: "none" };
 };
 
 const assertTargetInScope = (admin, { scopeKey, entity, slug }) => {
   if (isSuperAdmin(admin)) return;
 
+  const scope = adminScope(admin);
   if (scopeKey === "loans") {
-    if (adminScope(admin) !== "loans") {
+    if (scope !== "loans" && scope !== "both") {
       throw forbidden("This loan record is outside your supervision scope");
     }
     if (slug && !hasLoanAccess(admin, slug)) {
@@ -97,7 +106,7 @@ const assertTargetInScope = (admin, { scopeKey, entity, slug }) => {
     return;
   }
 
-  if (adminScope(admin) !== "modules") {
+  if (scope !== "modules" && scope !== "both") {
     throw forbidden("This record is outside your supervision scope");
   }
   const allowed = moduleEntitiesFor(admin);
@@ -258,6 +267,30 @@ const clearReview = async (admin, key) => {
   return { key: record.key };
 };
 
+/*
+Apne updates par aaye reviews. Har admin apna feedback dekh sakta hai — koi
+capability nahi chahiye, kyunki filter hi ownership enforce karta hai
+(`updateAdminId = signed-in admin`). Super admin ka review note isi endpoint
+se target admin ke dashboard tak pahunchta hai.
+*/
+const listReceivedReviews = async (admin, query = {}) => {
+  const adminId = admin?.id ? String(admin.id) : "";
+  if (!adminId) return { total: 0, reviews: [] };
+
+  const parsed = Number.parseInt(query.limit, 10);
+  const limit = Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, 1), MAX_LIMIT)
+    : 50;
+
+  const filter = { updateAdminId: adminId };
+  const [rows, total] = await Promise.all([
+    AdminReview.find(filter).sort({ reviewedAt: -1 }).limit(limit).lean(),
+    AdminReview.countDocuments(filter),
+  ]);
+
+  return { total, reviews: rows.map(toPublic) };
+};
+
 const summary = async (admin, query = {}) => {
   const parsed = Number.parseInt(query.days, 10);
   const days = Number.isFinite(parsed)
@@ -290,6 +323,7 @@ module.exports = {
   reviewKeyOf,
   scopeFilterFor,
   listReviews,
+  listReceivedReviews,
   saveReview,
   clearReview,
   summary,
