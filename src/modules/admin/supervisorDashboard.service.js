@@ -1,6 +1,6 @@
 const { AdminReview } = require("./adminReview.model");
 const { listActivity } = require("./adminActivity.service");
-const { normalizePermissions } = require("../../constants/adminPermissions");
+const { filterPermissionsForScopes } = require("../../constants/adminPermissions");
 const {
   adminScope,
   hasModuleAccess,
@@ -14,10 +14,10 @@ Sub-admin dashboard
 Sub admin ko loan product charts nahi chahiye — uska kaam supervision hai.
 Isliye `GET /dashboard/stats` uske liye `dashboardMode: "supervisor"` deta hai:
 
-  counts        -> needs review / verified / returned / escalated
-  pending[]     -> review ke liye pending updates (scope ke andar)
+  counts        -> needs review / verified / returned / escalated / decided
+  pending[]     -> review ke liye pending updates (regular admins ka kaam)
   admins[]      -> kis regular admin par kitna kaam hai
-  scope         -> loan products ya modules + granted permissions
+  scope         -> loan products, modules ya dono + granted permissions
 
 Data wahi activity feed se aata hai jo review queue use karti hai, isliye
 numbers aur queue hamesha match karte hain.
@@ -35,6 +35,31 @@ const stateOf = (record) => {
   return ["verified", "returned", "escalated", "decided"].includes(value)
     ? value
     : "pending";
+};
+
+/*
+Queue sirf regular admins ka kaam dikhati hai. Apne updates (self-review
+allowed nahi) aur super admin / doosre sub admin ke decisions yahan aate hain
+to count galat lagta hai aur row kholne par 400 milta hai.
+*/
+const isReviewTarget = (row, admin) => {
+  if (!row?.adminId) return false;
+  if (String(row.adminId) === String(admin?.id)) return false;
+  return !/super|sub/i.test(String(row.adminRole || ""));
+};
+
+const scopesFor = (admin) => {
+  const scopes = [];
+  if (
+    admin?.loanAccess === "all" ||
+    (Array.isArray(admin?.loanAccess) && admin.loanAccess.length > 0)
+  ) {
+    scopes.push("loans");
+  }
+  if (hasModuleAccess(admin, "customers") || hasModuleAccess(admin, "franchises")) {
+    scopes.push("modules");
+  }
+  return scopes;
 };
 
 const modulesFor = (admin) => {
@@ -67,8 +92,9 @@ const toPendingRow = (row, key, record) => ({
 
 const buildSupervisorDashboard = async (admin) => {
   const activity = await listActivity({ days: WINDOW_DAYS, limit: 500 }, admin);
+  const updates = activity.updates.filter((row) => isReviewTarget(row, admin));
 
-  const keys = activity.updates.map(reviewKeyOf);
+  const keys = updates.map(reviewKeyOf);
   const records = keys.length
     ? await AdminReview.find({ key: { $in: keys } })
         .select("key state note reviewedByName reviewedByRole reviewedAt")
@@ -79,7 +105,7 @@ const buildSupervisorDashboard = async (admin) => {
   const counts = { pending: 0, verified: 0, returned: 0, escalated: 0, decided: 0 };
   const pending = [];
 
-  activity.updates.forEach((row) => {
+  updates.forEach((row) => {
     const key = reviewKeyOf(row);
     const record = byKey.get(key);
     const state = stateOf(record);
@@ -104,13 +130,15 @@ const buildSupervisorDashboard = async (admin) => {
       scope: adminScope(admin),
       modules: modulesFor(admin),
       products,
-      permissions: normalizePermissions(admin?.permissions),
+      permissions: filterPermissionsForScopes(admin?.permissions, scopesFor(admin)),
       windowDays: WINDOW_DAYS,
-      totalUpdates: activity.updates.length,
+      totalUpdates: updates.length,
       counts,
       pendingTotal: counts.pending,
       pending: pending.slice(0, MAX_PENDING),
-      admins: activity.admins,
+      admins: activity.admins.filter(
+        (entry) => !/super|sub/i.test(String(entry.role || ""))
+      ),
       lastActivityAt: activity.lastActivityAt,
       generatedAt: new Date().toISOString(),
     },
