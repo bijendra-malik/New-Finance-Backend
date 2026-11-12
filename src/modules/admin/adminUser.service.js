@@ -10,8 +10,8 @@ const {
   ADMIN_ROLE,
   ADMIN_PERMISSION_KEYS,
   DEFAULT_SUB_ADMIN_PERMISSIONS,
-  appliesToScope,
-  filterPermissionsForScope,
+  appliesToAnyScope,
+  filterPermissionsForScopes,
   normalizePermissions,
 } = require("../../constants/adminPermissions");
 
@@ -105,22 +105,15 @@ const hasModuleScope = (moduleAccess) =>
   (Array.isArray(moduleAccess) && moduleAccess.length > 0);
 
 /**
- * Sub admin ka scope wahi hai jo regular admin ka access hota hai:
- * Loan products YA Customers & Franchises. Dono ek saath nahi — warna
- * dashboard aur review queue ka matlab hi ambiguous ho jaata hai.
+ * Sub admin ko wahi access mil sakta hai jo regular admin ko: loan products,
+ * Customers / Franchises — ya dono ek saath. Scopes ki list hi aage permission
+ * filtering chalati hai, isliye yahan koi either/or restriction nahi.
  */
-const scopeOf = ({ loanAccess, moduleAccess } = {}) => {
-  const loans = hasLoanScope(loanAccess);
-  const modules = hasModuleScope(moduleAccess);
-
-  if (loans && modules) {
-    throw badRequest(
-      "Sub admin ka scope ek hi ho sakta hai: loan products ya customers / franchises"
-    );
-  }
-  if (modules) return "modules";
-  if (loans) return "loans";
-  return null;
+const scopesOf = ({ loanAccess, moduleAccess } = {}) => {
+  const scopes = [];
+  if (hasLoanScope(loanAccess)) scopes.push("loans");
+  if (hasModuleScope(moduleAccess)) scopes.push("modules");
+  return scopes;
 };
 
 /**
@@ -134,10 +127,10 @@ const resolvePermissions = (value, role, access) => {
   if (role === ROLE.SUPER) return ADMIN_PERMISSION_KEYS;
   if (role !== ROLE.SUB) return [];
 
-  const scope = scopeOf(access);
-  if (!scope) {
+  const scopes = scopesOf(access);
+  if (!scopes.length) {
     throw badRequest(
-      "Sub admin ke liye scope chuno: loan products ya customers / franchises"
+      "Sub admin ke liye access chuno: loan products, customers ya franchises"
     );
   }
 
@@ -148,19 +141,17 @@ const resolvePermissions = (value, role, access) => {
 
   const outOfScope = provided
     ? []
-    : requested.filter((key) => !appliesToScope(key, scope));
+    : requested.filter((key) => !appliesToAnyScope(key, scopes));
   if (outOfScope.length) {
     throw badRequest(
-      `Ye permission is scope me nahi hai: ${outOfScope.join(", ")}`
+      `Ye permission selected area me nahi hai: ${outOfScope.join(", ")}`
     );
   }
 
-  const scoped = filterPermissionsForScope(requested, scope);
+  const scoped = filterPermissionsForScopes(requested, scopes);
   if (!scoped.length) {
     throw badRequest(
-      `Kam se kam ek permission chuno (${
-        scope === "loans" ? "loan products" : "customers / franchises"
-      } scope)`
+      `Kam se kam ek permission chuno (${scopes.join(" + ")} area)`
     );
   }
   return scoped;
@@ -224,6 +215,19 @@ const countOtherSuperAdmins = async (exceptId) => {
 
 /* ------------------------------ serialising ----------------------------- */
 
+/**
+ * Permissions sirf tab dikhti hain jab role aur scope dono allow karte hon.
+ * Purane documents me out-of-scope (ya regular admin ki) permissions bach sakti
+ * hain — unhe yahin kaat dete hain, warna UI galat capability dikhata hai.
+ */
+const publicPermissions = (doc) => {
+  if (doc.role === ROLE.SUPER) return ADMIN_PERMISSION_KEYS;
+  if (doc.role !== ROLE.SUB) return [];
+  const scopes = scopesOf({ loanAccess: doc.loanAccess, moduleAccess: doc.moduleAccess });
+  if (!scopes.length) return [];
+  return filterPermissionsForScopes(doc.permissions, scopes);
+};
+
 const toPublic = (admin) => {
   const doc = typeof admin.toObject === "function" ? admin.toObject() : admin;
   return {
@@ -232,10 +236,7 @@ const toPublic = (admin) => {
     name: doc.name,
     email: doc.email,
     role: doc.role,
-    permissions:
-      doc.role === ROLE.SUPER
-        ? ADMIN_PERMISSION_KEYS
-        : normalizePermissions(doc.permissions),
+    permissions: publicPermissions(doc),
     loanAccess: doc.role === ROLE.SUPER ? LOAN_ACCESS_ALL : doc.loanAccess ?? [],
     moduleAccess: doc.role === ROLE.SUPER ? MODULE_ACCESS_ALL : doc.moduleAccess ?? [],
     isActive: doc.isActive !== false,
@@ -448,7 +449,7 @@ const deleteAdmin = async (id, actorId) => {
 module.exports = {
   ROLE,
   MAX_REGULAR_ADMINS,
-  scopeOf,
+  scopesOf,
   resolvePermissions,
   listAdmins,
   createAdmin,
