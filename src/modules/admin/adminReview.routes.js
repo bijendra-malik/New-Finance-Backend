@@ -19,6 +19,13 @@ uska use case hai sub admins ka review kaam dekhna.
 
 router.use(adminAuth);
 
+/*
+Apne updates par aaye reviews — har admin ke liye, bina permission ke.
+Isliye "/mine" "/" se pehle aur alag path par hai; service khud filter lagati
+hai (updateAdminId = signed-in admin).
+*/
+router.get("/mine", adminReviewController.mine);
+
 router.get("/", requirePermission("updates.view"), adminReviewController.list);
 
 router.get(
