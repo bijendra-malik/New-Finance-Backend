@@ -11,7 +11,7 @@ connectDB();
 /* ============================
    Server
 ============================ */
-/*
+   /*
 `PORT=0` par express random port chun leta hai — admin panel hamesha 5000 par
 request bhejta hai, isliye khaali/zero value ko default maana jaata hai.
 */
