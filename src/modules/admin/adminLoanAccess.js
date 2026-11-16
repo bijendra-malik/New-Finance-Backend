@@ -131,9 +131,12 @@ const adminScope = (admin) => {
 const requirePermission = (key) => (req, res, next) => {
   if (hasPermission(req.admin, key)) return next();
 
+  /* `permission` field se frontend/support ko turant pata chalta hai kaunsi
+     permission missing hai (403 ka reason guess nahi karna padta). */
   return res.status(403).json({
     success: false,
     message: "You do not have permission to perform this action",
+    permission: key,
   });
 };
 
