@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const { NotificationRead, MAX_KEY_LENGTH } = require("./notification.model");
 const { AdminReview } = require("./adminReview.model");
 const { listActivity } = require("./adminActivity.service");
-const { isSuperAdmin, isSubAdmin } = require("./adminLoanAccess");
+const { isSuperAdmin, isSubAdmin, hasPermission } = require("./adminLoanAccess");
 
 /*
 ==========================================
@@ -104,6 +104,8 @@ const buildUpdateNotification = (row) => {
     source: "update",
     kind,
     priority: kind === "status" || kind === "recommendation" ? "high" : "low",
+    /* Same priority ke andar recommendation/decision note se upar. */
+    rank: kind === "note" ? 3 : 1,
     title,
     body: row.text || "",
     actorName: actor,
@@ -122,22 +124,31 @@ const buildUpdateNotification = (row) => {
 
 /* --------------------------------- reviews --------------------------------- */
 
+/*
+`rank` same priority ke andar order tay karta hai. Normal admin ke liye "returned"
+sabse zaroori hai (kaam wapas aaya hai, wajah ke saath), isliye uska rank sabse
+chhota — escalated bhi high hai par returned ke neeche rehta hai.
+*/
 const REVIEW_COPY = {
-  verified: {
-    title: "verified your update",
-    priority: "low",
-  },
   returned: {
     title: "returned your update for correction",
     priority: "high",
+    rank: 0,
   },
   escalated: {
     title: "escalated an update for a decision",
     priority: "high",
+    rank: 1,
   },
   decided: {
     title: "recorded a decision",
     priority: "normal",
+    rank: 2,
+  },
+  verified: {
+    title: "verified your update",
+    priority: "low",
+    rank: 3,
   },
 };
 
@@ -153,6 +164,7 @@ const buildReviewNotification = (review) => {
     source: "review",
     kind: review.state,
     priority: copy.priority,
+    rank: copy.rank,
     title: `${actor} ${copy.title}`,
     body: review.note || "",
     actorName: actor,
@@ -179,6 +191,8 @@ const sortNotifications = (items) =>
     const priority =
       (PRIORITY_ORDER[left.priority] ?? 1) - (PRIORITY_ORDER[right.priority] ?? 1);
     if (priority !== 0) return priority;
+    const rank = (left.rank ?? 2) - (right.rank ?? 2);
+    if (rank !== 0) return rank;
     return String(right.createdAt).localeCompare(String(left.createdAt));
   });
 
@@ -265,21 +279,42 @@ const listNotifications = async (viewer, query = {}) => {
   const since = days > 0 ? new Date(Date.now() - days * MS_PER_DAY) : null;
 
   const items = [];
+  const viewerIsSuper = isSuperAdmin(viewer);
 
-  /* Regular admin ke paas activity feed ka permission nahi hai — usse skip. */
-  if (isSuperAdmin(viewer) || isSubAdmin(viewer)) {
+  /*
+  Audience wahi Team & Access permissions se aati hai — alag allow-list nahi.
+  Sub admin `updates.view` ke bina na activity dekhta hai na review queue.
+  Normal admin ka feed isse affect nahi hota (usse sirf apne updates ka feedback
+  milta hai), isliye uske liye reviews hamesha chalti hain.
+  */
+  const seesUpdates =
+    viewerIsSuper || (isSubAdmin(viewer) && hasPermission(viewer, "updates.view"));
+
+  if (seesUpdates) {
     const activity = await listActivity({ days, limit: MAX_SCAN }, viewer);
     const viewerId = viewer?.id ? String(viewer.id) : "";
 
     activity.updates.forEach((row) => {
       // Apna hi kaam notification nahi banta.
       if (viewerId && row.adminId && row.adminId === viewerId) return;
-      items.push(buildUpdateNotification(row));
+      const item = buildUpdateNotification(row);
+      /*
+      Super admin ke liye sirf escalated high hai — baaki informational (low).
+      Warna uske bell me sab kuch "High" dikhkar urgency ka matlab khatam ho
+      jaata hai.
+      */
+      if (viewerIsSuper) item.priority = "low";
+      items.push(item);
     });
   }
 
-  const reviews = await reviewsFor(viewer, since);
-  reviews.forEach((review) => items.push(buildReviewNotification(review)));
+  const seesReviews = !isSubAdmin(viewer) || seesUpdates;
+  const reviews = seesReviews ? await reviewsFor(viewer, since) : [];
+  reviews.forEach((review) => {
+    const item = buildReviewNotification(review);
+    if (viewerIsSuper && item.kind !== "escalated") item.priority = "low";
+    items.push(item);
+  });
 
   /* Ek hi query: page ke saath-saath unread count bhi isi se nikalta hai. */
   const readKeys = await readKeysFor(viewer.id, items.map((item) => item.key));
