@@ -37,6 +37,13 @@ wahin 404 ho jata.
 router.use("/activity", require("./adminActivity.routes"));
 
 /*
+Notifications — har signed-in admin ke liye (feed admin updates + reviews se
+role-scoped derive hoti hai, read state per admin). "/" wale application router
+se PEHLE mount hota hai, warna "/notifications" wahin 404 ho jata.
+*/
+router.use("/notifications", require("./notification.routes"));
+
+/*
 Website contact form ki enquiries (GET list, PATCH status/note, DELETE).
 "/" wale application router se pehle mount hota hai, warna "/contacts" wahan
 404 ho jata.
