@@ -324,14 +324,11 @@ const resetRead = async (viewer) => {
   return { cleared: result.deletedCount || 0 };
 };
 
+/* Sirf controller-facing API export hoti hai — baaki helpers file ke andar hi
+   rehte hain (pehle ye tests ke liye export the, tests hataaye ja chuke hain). */
 module.exports = {
   listNotifications,
   markRead,
   markAllRead,
   resetRead,
-  buildUpdateNotification,
-  buildReviewNotification,
-  sortNotifications,
-  pathFor,
-  normalizeKeys,
 };
