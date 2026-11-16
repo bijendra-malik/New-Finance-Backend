@@ -50,7 +50,13 @@ Website contact form ki enquiries (GET list, PATCH status/note, DELETE).
 */
 router.use("/contacts", require("../contact/contact.admin.routes"));
 
-router.use("/", adminAuth, readOnlyForSubAdmin, require("./application.routes"));
+/*
+Loan application routes: likhne ke guards route ke andar hain (status ->
+`loans.decide`, updates -> normal admin ya `updates.review`), isliye yahan
+blanket `readOnlyForSubAdmin` nahi lagta. Pehle wo laga tha, jisse sub admin ka
+final decision aur reviewer remark dono 403 ho jaate the — spec ke ulta.
+*/
+router.use("/", adminAuth, require("./application.routes"));
 
 /*
 Location Master owns its own relational collections (continents, countries,
