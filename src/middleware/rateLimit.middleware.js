@@ -83,10 +83,24 @@ const contactLimiter = rateLimit({
   },
 });
 
+// Public captcha (new + verify) — har form submit me 2 calls lagti hain, isliye
+// 10 minute me 60. Isse zyada ka matlab script hai, insaan nahi.
+const captchaLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many verification attempts. Please try again in a few minutes.",
+  },
+});
+
 module.exports = {
   otpRequestLimiter,
   otpVerifyLimiter,
   adminLoginLimiter,
   locationLimiter,
   contactLimiter,
+  captchaLimiter,
 };
