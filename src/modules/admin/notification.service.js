@@ -310,9 +310,16 @@ const listNotifications = async (viewer, query = {}) => {
 
   const seesReviews = !isSubAdmin(viewer) || seesUpdates;
   const reviews = seesReviews ? await reviewsFor(viewer, since) : [];
+  const viewerIsPlainAdmin = !viewerIsSuper && !isSubAdmin(viewer);
+
   reviews.forEach((review) => {
     const item = buildReviewNotification(review);
     if (viewerIsSuper && item.kind !== "escalated") item.priority = "low";
+    /*
+    Normal admin ko sirf action tag dikhna chahiye (Verified / Returned /
+    Escalated / Decision recorded) — reviewer ka andar ka note nahi.
+    */
+    if (viewerIsPlainAdmin) item.body = "";
     items.push(item);
   });
 
