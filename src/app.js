@@ -91,6 +91,13 @@ padhta hai, isliye yahan sirf POST khula hai aur rate-limited hai.
 */
 app.use("/api/contact", require("./modules/contact/contact.routes"));
 
+/*
+Human verification ("I am not a robot" + chhota calculation) — public
+aur kisi bhi form se pehle chalta hai. In-memory store, koi DB collection
+nahi. Details: docs/CAPTCHA-API.md
+*/
+app.use("/api/captcha", require("./modules/captcha/captcha.routes"));
+
 app.use("/api/masters", require("./modules/masters/master.routes"));
 app.use("/api/employment-types", require("./modules/masters/employmentType.routes"));
 
