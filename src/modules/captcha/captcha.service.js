@@ -147,8 +147,12 @@ const verifyChallenge = ({ id, answer }) => {
     return { status: "expired" };
   }
 
-  const value = Number(String(answer ?? "").trim());
-  const correct = Number.isFinite(value) && value === challenge.answer;
+  /*
+  Sirf digits accept hote hain: `true`, `[]`, `""` ya `"7.5"` jaisa kuch bhi
+  accidental match nahi bana sakta (pehle `Number(true)` = 1 ho jaata tha).
+  */
+  const raw = String(answer ?? "").trim();
+  const correct = /^\d{1,3}$/.test(raw) && Number(raw) === challenge.answer;
 
   if (!correct) {
     challenge.attemptsLeft -= 1;
