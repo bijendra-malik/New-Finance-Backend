@@ -109,22 +109,6 @@ const registerCustomer = async (franchise, body = {}) => {
     throw conflict("This customer is already registered by your franchise. Open the existing customer instead.");
   }
 
-  /*
-  Ek email se ek hi customer account banta hai (OTP verify par `users` account
-  isi email se banta hai aur usme email unique hai), isliye doosre customer ki
-  email dobara nahi li ja sakti. Yahin register par saaf 409 milta hai — warna
-  customer ka OTP verify karte waqt duplicate email ka error aata.
-  */
-  const emailOwner = await User.findOne({ email });
-  if (emailOwner) {
-    throw conflict("This email is already registered. Please use a different email address.");
-  }
-
-  const emailTaken = await FranchiseCustomer.findOne({ email });
-  if (emailTaken) {
-    throw conflict("This email is already registered. Please use a different email address.");
-  }
-
   const customer = await FranchiseCustomer.create({
     franchise: franchise._id,
     franchiseCode: franchise.franchiseId || null,
