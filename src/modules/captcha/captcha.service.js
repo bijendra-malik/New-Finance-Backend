@@ -4,8 +4,9 @@ const crypto = require("crypto");
 ==========================================
 Human verification (captcha) service
 
-Do hisse:
-  1. Challenge  — chhota calculation ("7 + 3"), 2 minute valid, 3 attempts.
+  Do hisse:
+  1. Challenge  — chhota calculation ("42 + 17", dono numbers 10–99), 2 minute
+                  valid, 3 attempts.
   2. Token      — sahi answer par issue hota hai; form submit isi token ke saath
                   aata hai aur token single-use hota hai (10 minute valid).
 
@@ -73,6 +74,10 @@ const newChallenge = () => {
   /*
   Kabhi addition, kabhi subtraction. Subtraction me answer negative nahi aata
   (b < a), kyunki "-" wale chhote sawaal par typo zyada hoti hai.
+
+  Dono numbers two-digit hote hain (10 se 99), single digit nahi. Subtraction
+  me pehla number kam se kam 20 rakha jaata hai taaki doosra bhi 10 se shuru
+  ho — yaani dono operands 10–99 ke beech rahein.
   */
   const subtraction = randomInt(0, 1) === 1;
 
@@ -80,13 +85,13 @@ const newChallenge = () => {
   let answer;
 
   if (subtraction) {
-    const a = randomInt(2, 9);
-    const b = randomInt(1, a - 1);
+    const a = randomInt(20, 99);
+    const b = randomInt(10, a - 1);
     question = `${a} - ${b}`;
     answer = a - b;
   } else {
-    const a = randomInt(1, 9);
-    const b = randomInt(1, 9);
+    const a = randomInt(10, 99);
+    const b = randomInt(10, 99);
     question = `${a} + ${b}`;
     answer = a + b;
   }
