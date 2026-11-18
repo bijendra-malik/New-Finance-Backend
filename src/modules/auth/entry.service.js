@@ -77,6 +77,56 @@ const unwrap = (body) =>
   body && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : body || {};
 
 /*
+--------------------------------------------- registration identity rules --
+
+Ek email aur ek mobile sirf ek hi account par chalega. Ye check register ke
+pehle step par hota hai (OTP bhejne se pehle), taaki duplicate detail par OTP na
+jaaye aur user ko turant saaf message mile:
+
+  same email  -> 409 "This email is already registered…"
+  same mobile -> 409 "This mobile number is already registered…"
+
+Doosri (nayi) email/mobile se register karne par koi rok nahi hai.
+Customer aur franchise apne-apne collection me rehte hain, isliye check apne hi
+ledger me hota hai — customer entry `users` me, franchise entry `franchises` me.
+*/
+const EMAIL_TAKEN_MESSAGE =
+  "This email is already registered. Please use a different email address.";
+const MOBILE_TAKEN_MESSAGE =
+  "This mobile number is already registered. Please use a different mobile number.";
+const CUSTOMER_EXISTS_MESSAGE =
+  "You are already registered. Please login using your registered mobile number and OTP.";
+
+/** Customer entry — email/mobile pehle se kisi aur customer account par na ho. */
+const assertCustomerIdentityAvailable = async ({ email, mobile }) => {
+  const owner = await User.findOne({
+    role: USER_ROLE.CUSTOMER,
+    $or: [{ mobile }, { email }],
+  });
+
+  if (!owner) return;
+
+  /*
+  Mobile match hua to yahi customer hai — usko login bhejo. Sirf email match
+  hua to email kisi doosre account ki hai, isliye email ka message.
+  */
+  if (String(owner.mobile || "") === mobile) {
+    throw conflict(CUSTOMER_EXISTS_MESSAGE);
+  }
+
+  throw conflict(EMAIL_TAKEN_MESSAGE);
+};
+
+/** Franchise entry — email/mobile pehle se kisi aur franchise account par na ho. */
+const assertFranchiseIdentityAvailable = async ({ email, mobile }) => {
+  const emailOwner = await Franchise.findOne({ email });
+  if (emailOwner) throw conflict(EMAIL_TAKEN_MESSAGE);
+
+  const mobileOwner = await Franchise.findOne({ mobile });
+  if (mobileOwner) throw conflict(MOBILE_TAKEN_MESSAGE);
+};
+
+/*
 Entry ka OTP sirf entry documents par chalta hai. Status (`purpose: "status"`),
 login (`purpose: "login"`) aur franchise-status OTPs alag rehte hain, isliye ek
 doore ko replace ya verify nahi karte. Purane (purpose field ke bina bane)
@@ -161,20 +211,22 @@ const buildPendingFranchise = (body = {}) => {
   };
 };
 
-/** Ek hi save point — duplicate email/customerId par saaf 409. */
-const saveAccount = async (account) => {
+/** Ek hi save point — duplicate email/mobile/customerId par saaf 409. */
+const saveAccount = async (account, role) => {
+  const accountType = role === USER_ROLE.FRANCHISE ? "franchise account" : "customer account";
+
   try {
     await account.save();
   } catch (error) {
     if (error && error.code === 11000) {
       const field = Object.keys(error.keyValue || {})[0];
       if (field === "email") {
-        throw conflict("This email is already linked to another customer account.");
+        throw conflict(`This email is already linked to another ${accountType}.`);
       }
       if (field === "mobile") {
-        throw conflict("This mobile is already linked to another customer account.");
+        throw conflict(`This mobile is already linked to another ${accountType}.`);
       }
-      throw conflict("This customer account conflicts with an existing email or mobile.");
+      throw conflict(`This ${accountType} conflicts with an existing email or mobile.`);
     }
     throw error;
   }
@@ -260,6 +312,17 @@ const upsertFranchise = async (mobile, details) => {
       franchiseStatus: FRANCHISE_STATUS.NONE,
     });
     return { account, isNew: true };
+  }
+
+  /*
+  Purane franchise record me email khaali ho aur nayi entry kisi doosri franchise
+  ki email laaye to save duplicate key par girta tha — yahin saaf 409.
+  */
+  if (!existing.email && details.email) {
+    const emailOwner = await Franchise.findOne({ email: details.email });
+    if (emailOwner && String(emailOwner._id) !== String(existing._id)) {
+      throw conflict(EMAIL_TAKEN_MESSAGE);
+    }
   }
 
   const fillIfEmpty = (field) => {
@@ -404,15 +467,7 @@ const startEntry = async ({
   const details = buildPendingDetails(body);
 
   if (!isFranchise && !franchiseCustomer) {
-    const existingCustomer = await User.findOne({
-      role: USER_ROLE.CUSTOMER,
-      $or: [{ mobile: details.mobile }, { email: details.email }],
-    });
-    if (existingCustomer) {
-      throw conflict(
-        "You are already registered. Please login using your registered mobile number and OTP."
-      );
-    }
+    await assertCustomerIdentityAvailable(details);
   }
 
   // Jo franchise already approved hai usko dobara entry ki zaroorat nahi — login kare.
@@ -426,6 +481,9 @@ const startEntry = async ({
         "This mobile is already an approved franchise. Please login with your franchise ID and password."
       );
     }
+
+    // Pending/rejected franchise ka email ya mobile bhi dobara use nahi hoga.
+    await assertFranchiseIdentityAvailable(details);
   }
 
   const pendingFranchise = isFranchise ? buildPendingFranchise(body) : null;
@@ -557,7 +615,7 @@ const verifyEntry = async ({
   account.isVerified = true;
   account.lastLogin = new Date();
 
-  await saveAccount(account);
+  await saveAccount(account, role);
 
   otpData.verifiedAt = new Date();
   await otpData.save();
