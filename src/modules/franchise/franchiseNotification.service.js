@@ -2,9 +2,37 @@ const { FranchiseNotificationRead } = require("./franchiseNotification.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { FRANCHISE_STATUS } = require("../../constants/roles");
 
-const DEFAULT_LIMIT = 10;
-const MAX_LIMIT = 10;
+/*
+==========================================
+Franchise notifications — derived feed + read state
+
+  GET  /api/franchise/notifications?page=1&limit=20
+  POST /api/franchise/notifications/read        { keys: [] }
+  POST /api/franchise/notifications/read-all
+
+Franchise ko sirf uske apne records dikhte hain:
+
+  - uski khud ki franchise application (pending / approved / rejected)
+  - uske franchise customers ke loan applications ka status — har status change
+    apni notification hai, isliye "kya hua, kab hua" ka trail rehta hai
+
+Feed alag table me store nahi hoti: source of truth wahi documents hain
+(`franchises.franchiseStatus`, loan ka status + `adminUpdates[]`), aur read
+state `FranchiseNotificationRead` me per franchise + per key rehti hai. Isliye
+API restart ke baad bhi notifications, unread count aur read state same rehte
+hain — koi duplicate writer nahi chahiye.
+
+`page`/`limit` se poora feed padha ja sakta hai (max 100 per page). Read-all ek
+hi scan me saari unread keys mark karta hai (pehle har page par poora feed
+dobara scan hota tha).
+==========================================
+*/
+
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
 const DEFAULT_PAGE = 1;
+/* Ek request me itni keys hi mark ho sakti hain (payload bound). */
+const MAX_KEYS = 500;
 
 const cleanText = (value) => String(value ?? "").trim();
 
@@ -19,7 +47,9 @@ const safeDate = (value, fallback = new Date()) => {
   return date && !Number.isNaN(date.getTime()) ? date : fallback;
 };
 
-const addApplicationNotification = (franchise, since, items) => {
+/* ------------------------- franchise application ------------------------- */
+
+const addApplicationNotification = (franchise, items) => {
   const status = franchise.franchiseStatus || FRANCHISE_STATUS.NONE;
   if (status === FRANCHISE_STATUS.NONE) return;
 
@@ -35,7 +65,8 @@ const addApplicationNotification = (franchise, since, items) => {
   } else if (status === FRANCHISE_STATUS.APPROVED) {
     createdAt = safeDate(franchise.franchiseApprovedAt, franchise.updatedAt);
     title = "Franchise application approved";
-    body = "Your franchise is approved. Please login using the franchise ID and password shared by the admin.";
+    body =
+      "Your franchise is approved. Please login using the franchise ID and password shared by the admin.";
     priority = "high";
   } else if (status === FRANCHISE_STATUS.REJECTED) {
     createdAt = safeDate(franchise.franchiseRejectedAt, franchise.updatedAt);
@@ -43,10 +74,9 @@ const addApplicationNotification = (franchise, since, items) => {
     title = "Franchise application rejected";
     body = reason ? `Reason: ${reason}` : "Please contact support for more details.";
     priority = "high";
+  } else {
+    return;
   }
-
-  if (!createdAt) return;
-  if (since && createdAt < since) return;
 
   items.push({
     key: `franchise:${franchise._id}:application:${status}:${createdAt.toISOString()}`,
@@ -56,161 +86,235 @@ const addApplicationNotification = (franchise, since, items) => {
     body,
     priority,
     createdAt: createdAt.toISOString(),
+    data: { status },
   });
 };
 
-const addLoanNotifications = async (franchise, since, items) => {
+/* ------------------------------ loan status ------------------------------ */
+
+/** Jab loan par status trail na ho — current status kis din ka hai. */
+const currentStatusDate = (application) => {
+  const status = application.status || "Submitted";
+  if (status === "Approved") return safeDate(application.approvedAt, application.updatedAt);
+  if (status === "Rejected") return safeDate(application.rejectedAt, application.updatedAt);
+  return safeDate(application.updatedAt);
+};
+
+/**
+ * Ek status change -> ek notification. `at` us change ka waqt hai, isliye
+ * purana "Pending" bhi feed me rehta hai jab loan "Approved" ho jaye.
+ */
+const loanItem = ({ franchise, application, product, status, at, customerName, items }) => {
+  const applicationNo = cleanText(application.applicationNo) || String(application._id);
+  const label = customerName || applicationNo;
+  let title;
+  let body;
+  let priority = "medium";
+
+  if (status === "Approved") {
+    title = `${label} — loan approved`;
+    body = `${applicationNo} has been approved.`;
+    priority = "high";
+  } else if (status === "Rejected") {
+    const reason = cleanText(application.adminNote);
+    title = `${label} — loan rejected`;
+    body = reason
+      ? `${applicationNo} was rejected. Reason: ${reason}`
+      : `${applicationNo} was rejected.`;
+    priority = "high";
+  } else if (status === "Pending") {
+    title = `${label} — loan under review`;
+    body = `${applicationNo} is under review.`;
+  } else {
+    title = `${label} — application submitted`;
+    body = `${applicationNo} was submitted.`;
+  }
+
+  items.push({
+    key: `franchise:${franchise._id}:loan:${applicationNo}:${status}:${at.toISOString()}`,
+    type: "loan_status",
+    kind: status.toLowerCase(),
+    title,
+    body,
+    priority,
+    createdAt: at.toISOString(),
+    data: {
+      applicationNo,
+      product,
+      status,
+      customerName: customerName || null,
+      franchiseCustomerId: application.franchiseCustomer
+        ? String(application.franchiseCustomer)
+        : null,
+    },
+  });
+};
+
+const addLoanNotifications = async (franchise, items) => {
   await Promise.all(
     Object.entries(MODELS).map(async ([product, Model]) => {
-      const filter = { franchise: franchise._id };
-      if (since) filter.updatedAt = { $gte: since };
-
-      const applications = await Model.find(filter)
-        .select("applicationNo status updatedAt approvedAt rejectedAt adminNote franchiseCustomer personalDetails")
+      const applications = await Model.find({ franchise: franchise._id })
+        .select(
+          "applicationNo fullName status updatedAt approvedAt rejectedAt adminNote adminUpdates franchiseCustomer"
+        )
         .sort({ updatedAt: -1 })
         .lean();
 
       applications.forEach((application) => {
-        const status = application.status || "Submitted";
-        const statusDate =
-          status === "Approved"
-            ? safeDate(application.approvedAt, application.updatedAt)
-            : status === "Rejected"
-              ? safeDate(application.rejectedAt, application.updatedAt)
-              : safeDate(application.updatedAt);
+        /* Personal details schema loan par flat fields ke roop me rehti hai. */
+        const customerName = cleanText(application.fullName);
 
-        if (since && statusDate < since) return;
+        /*
+        Har final decision trail me `kind: "status"` entry hai. Isi se history
+        banti hai; trail na ho (purana record / auto-reject) to current status
+        hi ek notification banta hai.
+        */
+        const statusChanges = (application.adminUpdates || [])
+          .filter((update) => update.kind === "status" && update.suggestedStatus && update.addedAt)
+          .map((update) => ({ status: update.suggestedStatus, at: safeDate(update.addedAt) }))
+          .sort((left, right) => left.at - right.at);
 
-        const applicationNo = cleanText(application.applicationNo) || String(application._id);
-        let title = "Loan application updated";
-        let body = `${applicationNo} is ${status.toLowerCase()}.`;
+        if (statusChanges.length) {
+          statusChanges.forEach((change) =>
+            loanItem({
+              franchise,
+              application,
+              product,
+              status: change.status,
+              at: change.at,
+              customerName,
+              items,
+            })
+          );
 
-        if (status === "Approved") title = "Loan application approved";
-        else if (status === "Rejected") {
-          title = "Loan application rejected";
-          body = application.adminNote
-            ? `${applicationNo} rejected. Reason: ${cleanText(application.adminNote)}`
-            : `${applicationNo} was rejected.`;
-        } else if (status === "Pending") title = "Loan application under review";
-        else title = "Loan application submitted";
+          /* Trail ka last decision aur current status alag ho sakte hain. */
+          const status = application.status || "Submitted";
+          if (statusChanges[statusChanges.length - 1].status !== status) {
+            loanItem({
+              franchise,
+              application,
+              product,
+              status,
+              at: currentStatusDate(application),
+              customerName,
+              items,
+            });
+          }
+          return;
+        }
 
-        items.push({
-          key: `franchise:${franchise._id}:loan:${applicationNo}:${status}:${statusDate.toISOString()}`,
-          type: "loan_status",
-          kind: status.toLowerCase(),
-          title,
-          body,
-          priority: status === "Approved" || status === "Rejected" ? "high" : "medium",
-          createdAt: statusDate.toISOString(),
-          data: {
-            applicationNo,
-            product,
-            franchiseCustomerId: application.franchiseCustomer ? String(application.franchiseCustomer) : null,
-            status,
-          },
+        loanItem({
+          franchise,
+          application,
+          product,
+          status: application.status || "Submitted",
+          at: currentStatusDate(application),
+          customerName,
+          items,
         });
       });
     })
   );
 };
 
+/* ------------------------------- feed builder ------------------------------- */
+
+/** Poora sorted feed + is franchise ki read keys (ek hi scan). */
+const buildFeed = async (franchise) => {
+  const items = [];
+  addApplicationNotification(franchise, items);
+  await addLoanNotifications(franchise, items);
+
+  const sorted = items.sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime() ||
+      String(left.key).localeCompare(String(right.key))
+  );
+
+  const receipts = await FranchiseNotificationRead.find({ franchiseId: franchise._id })
+    .select("key")
+    .lean();
+  const readKeys = new Set(receipts.map((row) => row.key));
+
+  return { sorted, readKeys };
+};
+
 const listNotifications = async (franchise, query = {}) => {
   const limit = toInt(query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const page = toInt(query.page, DEFAULT_PAGE, 1, Number.MAX_SAFE_INTEGER);
 
-  const items = [];
-  addApplicationNotification(franchise, null, items);
-  await addLoanNotifications(franchise, null, items);
-
-  const sorted = items.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  const { sorted, readKeys } = await buildFeed(franchise);
   const total = sorted.length;
   const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
   const start = (page - 1) * limit;
   const paginated = sorted.slice(start, start + limit);
-
-  const allKeys = items.map((item) => item.key);
-  const receipts = allKeys.length
-    ? await FranchiseNotificationRead.find({
-        franchiseId: franchise._id,
-        key: { $in: allKeys },
-      }).select("key").lean()
-    : [];
-  const readKeys = new Set(receipts.map((row) => row.key));
 
   const notifications = paginated.map((item) => ({
     ...item,
     read: readKeys.has(item.key),
   }));
 
-  const unread = items.filter((item) => !readKeys.has(item.key)).length;
-
   return {
     page,
     limit,
     total,
     totalPages,
-    unread,
+    unread: sorted.filter((item) => !readKeys.has(item.key)).length,
     notifications,
     generatedAt: new Date().toISOString(),
   };
 };
 
+/* ------------------------------ read receipts ------------------------------ */
+
 const normalizeKeys = (keys) =>
   Array.isArray(keys)
-    ? [...new Set(keys.map((key) => cleanText(key)).filter((key) => key && key.length <= 200))]
+    ? [
+        ...new Set(
+          keys.map((key) => cleanText(key)).filter((key) => key && key.length <= 200)
+        ),
+      ]
     : [];
 
-const markRead = async (franchise, keys) => {
-  const normalized = normalizeKeys(keys).slice(0, 100);
-  if (!normalized.length) return { marked: 0, unread: (await listNotifications(franchise)).unread };
-
+const saveReadKeys = async (franchiseId, keys) => {
+  if (!keys.length) return 0;
   await FranchiseNotificationRead.bulkWrite(
-    normalized.map((key) => ({
+    keys.map((key) => ({
       updateOne: {
-        filter: { franchiseId: franchise._id, key },
-        update: { $set: { franchiseId: franchise._id, key, readAt: new Date() } },
+        filter: { franchiseId, key },
+        update: { $set: { franchiseId, key, readAt: new Date() } },
         upsert: true,
       },
     })),
     { ordered: false }
   );
-
-  const feed = await listNotifications(franchise);
-  return { marked: normalized.length, unread: feed.unread };
+  return keys.length;
 };
 
-const markAllRead = async (franchise, query = {}) => {
-  const first = await listNotifications(franchise, {
-    ...query,
-    page: 1,
-    limit: MAX_LIMIT,
-  });
-  const keys = [...first.notifications.map((item) => item.key)];
+/** Sirf di gayi keys read mark karo (clicked row). */
+const markRead = async (franchise, keys) => {
+  const normalized = normalizeKeys(keys).slice(0, MAX_KEYS);
 
-  for (let page = 2; page <= first.totalPages; page += 1) {
-    const next = await listNotifications(franchise, {
-      ...query,
-      page,
-      limit: MAX_LIMIT,
-    });
-    keys.push(...next.notifications.map((item) => item.key));
+  if (!normalized.length) {
+    const feed = await listNotifications(franchise, { limit: 1 });
+    return { marked: 0, unread: feed.unread };
   }
 
-  if (!keys.length) return { marked: 0, unread: 0 };
+  const marked = await saveReadKeys(franchise._id, normalized);
+  const feed = await listNotifications(franchise, { limit: 1 });
+  return { marked, unread: feed.unread };
+};
 
-  await FranchiseNotificationRead.bulkWrite(
-    [...new Set(keys)].map((key) => ({
-      updateOne: {
-        filter: { franchiseId: franchise._id, key },
-        update: { $set: { franchiseId: franchise._id, key, readAt: new Date() } },
-        upsert: true,
-      },
-    })),
-    { ordered: false }
-  );
-  return { marked: new Set(keys).size, unread: 0 };
+/** Poora feed read mark karo — ek hi feed scan, phir ek bulk write. */
+const markAllRead = async (franchise) => {
+  const { sorted, readKeys } = await buildFeed(franchise);
+  const unreadKeys = sorted.filter((item) => !readKeys.has(item.key)).map((item) => item.key);
+  if (!unreadKeys.length) return { marked: 0, unread: 0 };
+
+  const keys = unreadKeys.slice(0, MAX_KEYS);
+  const marked = await saveReadKeys(franchise._id, keys);
+
+  return { marked, unread: Math.max(0, unreadKeys.length - marked) };
 };
 
 module.exports = {
