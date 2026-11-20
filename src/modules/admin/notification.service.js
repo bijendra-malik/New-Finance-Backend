@@ -299,11 +299,11 @@ const listNotifications = async (viewer, query = {}) => {
       if (viewerId && row.adminId && row.adminId === viewerId) return;
       const item = buildUpdateNotification(row);
       /*
-      Super admin ke liye sirf escalated high hai — baaki informational (low).
-      Warna uske bell me sab kuch "High" dikhkar urgency ka matlab khatam ho
-      jaata hai.
+      Super admin ke liye escalated aur status change high hain — baaki
+      informational (low). Normal admin ka status update bell me kho na jaaye,
+      isliye `kind: "status"` high rehta hai (actor ka naam/role row me hai).
       */
-      if (viewerIsSuper) item.priority = "low";
+      if (viewerIsSuper) item.priority = item.kind === "status" ? "high" : "low";
       items.push(item);
     });
   }
