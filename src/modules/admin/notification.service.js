@@ -22,8 +22,14 @@ rehti hai, yaani device badalne par bhi wahi unread count milta hai.
 
 Audience (kaun kya dekhta hai):
   SuperAdmin -> sabki activity + escalated / decided reviews (apna kaam chhod kar)
-  SubAdmin   -> apne scope ke normal admins ki activity + escalated / decided reviews
-  Admin      -> sirf apne updates par aaya feedback (verified / returned / escalated / decided)
+  SubAdmin   -> apne scope ke admins ki activity (updates.view na ho to sirf status)
+                + escalated / decided reviews
+  Admin      -> apne scope ke sabhi admins ki activity (status / note / recommendation)
+                + apne updates par aaya feedback (verified / returned / escalated / decided)
+
+Notification feed derive hoti hai, isliye koi update gum nahi hota: purane status
+changes aur notes restart ke baad bhi feed me aate hain. Read state
+(NotificationRead) per admin server par save hoti hai.
 ==========================================
 */
 
@@ -91,8 +97,8 @@ const buildUpdateNotification = (row) => {
   let title;
   if (kind === "status") {
     title = row.suggestedStatus
-      ? `${actor} recorded a decision: ${row.suggestedStatus}`
-      : `${actor} recorded a decision`;
+      ? `${actor} changed status to ${row.suggestedStatus}`
+      : `${actor} changed the application status`;
   } else if (kind === "recommendation") {
     title = `${actor} recommended ${row.suggestedStatus || "a status change"}`;
   } else {
@@ -282,21 +288,27 @@ const listNotifications = async (viewer, query = {}) => {
   const viewerIsSuper = isSuperAdmin(viewer);
 
   /*
-  Audience wahi Team & Access permissions se aati hai — alag allow-list nahi.
-  Sub admin `updates.view` ke bina na activity dekhta hai na review queue.
-  Normal admin ka feed isse affect nahi hota (usse sirf apne updates ka feedback
-  milta hai), isliye uske liye reviews hamesha chalti hain.
-  */
-  const seesUpdates =
-    viewerIsSuper || (isSubAdmin(viewer) && hasPermission(viewer, "updates.view"));
+  Har admin ko kisi bhi admin ka update notification me milta hai — super admin
+  ka status change, regular admin ka note ya recommendation. Scope `listActivity`
+  me product access se filter hota hai, isliye ek admin doosre product ka data
+  nahi dekhta. Apna hi kaam feed me nahi aata (neeche filter); uske liye reviews
+  ka feedback rehta hai.
 
-  if (seesUpdates) {
+  Exception: `updates.view` ke bina sub admin ko sirf `kind: "status"` rows
+  milti hain, kyunki notes/recommendations padhna us permission ka kaam hai.
+  Decision lene wale ko phir bhi pata rehna chahiye ki application par kya hua.
+  */
+  const subSeesReviewFeed = isSubAdmin(viewer) && hasPermission(viewer, "updates.view");
+  const statusOnly = isSubAdmin(viewer) && !subSeesReviewFeed;
+
+  if (viewer?.id) {
     const activity = await listActivity({ days, limit: MAX_SCAN }, viewer);
     const viewerId = viewer?.id ? String(viewer.id) : "";
 
     activity.updates.forEach((row) => {
       // Apna hi kaam notification nahi banta.
       if (viewerId && row.adminId && row.adminId === viewerId) return;
+      if (statusOnly && row.kind !== "status") return;
       const item = buildUpdateNotification(row);
       /*
       Super admin ke liye escalated aur status change high hain — baaki
@@ -308,7 +320,8 @@ const listNotifications = async (viewer, query = {}) => {
     });
   }
 
-  const seesReviews = !isSubAdmin(viewer) || seesUpdates;
+  const seesReviews =
+    !isSubAdmin(viewer) || subSeesReviewFeed || hasPermission(viewer, "loans.decide");
   const reviews = seesReviews ? await reviewsFor(viewer, since) : [];
   const viewerIsPlainAdmin = !viewerIsSuper && !isSubAdmin(viewer);
 
