@@ -238,14 +238,16 @@ const listActivity = async (query = {}, viewer = null) => {
   ]);
 
   /*
-  Sub admin regular admins ka kaam review karta hai — uski feed me super admin
-  ke decisions aur doosre sub admins ke kaam nahi aate, warna "needs review"
-  queue me wo cheezein aa jaati hain jo uske role ka hissa nahi hain.
+  Sub admin regular admins ka kaam review karta hai — doosre sub admins ke review
+  uski feed me nahi aate, warna "needs review" queue me wo cheezein aa jaati hain
+  jo uske role ka hissa nahi hain. Super admin ke final status changes phir bhi
+  aate hain: notification se pata chalna chahiye ki application par aakhri
+  decision kisne liya.
   */
   const allRows = batches.flat().sort((left, right) => right.addedAtMs - left.addedAtMs);
   const all =
     viewer && isSubAdmin(viewer)
-      ? allRows.filter((row) => !/super|sub/i.test(row.adminRole || ""))
+      ? allRows.filter((row) => !/sub/i.test(row.adminRole || ""))
       : allRows;
 
   const adminTotals = new Map();
