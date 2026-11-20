@@ -12,7 +12,7 @@ const dashboardController = require("./dashboard.controller");
 const rejectedLoansController = require("./rejectedLoans.controller");
 const {
   requireLoanAccess,
-  requirePermission,
+  isSuperAdmin,
   isSubAdmin,
   hasPermission,
 } = require("./adminLoanAccess");
@@ -24,13 +24,34 @@ One registry drives every product so all resources get the same three
 endpoints (see ../loans/shared/adminStatus.service.js).
 
 Write guards:
-  status PATCH  -> `loans.decide` (super admin ke paas hamesha, sub admin ko
-                   Team & Access se, normal admin ko nahi)
+  status PATCH  -> regular admin apne product par status update karta hai (kaam
+                   aage badhana uske role ka hissa hai); sub admin ko iske liye
+                   `loans.decide` chahiye; super admin ke paas hamesha
   updates POST  -> normal admin apna note/recommendation likhta hai, sub admin
                    `updates.review` ke saath reviewer remark
   DELETE        -> sirf super admin
 ==========================================
 */
+
+/**
+ * Status change guard.
+ *
+ * Normal admin ka kaam application ko aage badhana hai, isliye wo apne assigned
+ * product par status update kar sakta hai (product access pehle hi check ho
+ * chuka hota hai). Sub admin record edit nahi karta — usse `loans.decide`
+ * permission chahiye, warna 403. Super admin ke paas ye permission hamesha hai.
+ */
+const canChangeStatus = (req, res, next) => {
+  if (isSuperAdmin(req.admin)) return next();
+  if (!isSubAdmin(req.admin)) return next();
+  if (hasPermission(req.admin, "loans.decide")) return next();
+
+  return res.status(403).json({
+    success: false,
+    message: "You need final-decision permission to change an application status",
+    permission: "loans.decide",
+  });
+};
 
 /**
  * Sub admin review kar sakta hai, record edit nahi — isliye uska comment likhna
@@ -53,15 +74,10 @@ Object.keys(RESOURCE_ROUTES).forEach((resource) => {
   const access = requireLoanAccess(productKey);
   router.get(`/${resource}`, access, getListHandler(resource));
   router.get(`/${resource}/:id`, access, getByIdHandler(resource));
-  /*
-  Final decision (`loans.decide`) — normal admin sirf note/recommendation deta
-  hai, decide nahi karta. Super admin ke paas ye permission hamesha hoti hai,
-  sub admin ko Team & Access se milti hai; warna 403.
-  */
   router.patch(
     `/${resource}/:id/status`,
     access,
-    requirePermission("loans.decide"),
+    canChangeStatus,
     updateStatusHandler(resource)
   );
   router.post(`/${resource}/:id/updates`, access, canCommentOnUpdate, addUpdateHandler(resource));
