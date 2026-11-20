@@ -218,6 +218,10 @@ const deleteApplicationHandler = (resource) => async (req, res, next) => {
  * - Unknown status -> 400
  * - Illegal transition (e.g. Approved -> anything, or no-op) -> 409
  * - Stamps approvedBy/approvedAt (or rejectedAt) + adminNote.
+ *
+ * Kaun chala sakta hai: normal admin (apne product par), sub admin
+ * `loans.decide` permission ke saath, aur super admin. Guard
+ * ../admin/application.routes.js me hai.
  */
 const updateStatusHandler = (resource) => async (req, res, next) => {
   try {
@@ -315,8 +319,9 @@ const updateStatusHandler = (resource) => async (req, res, next) => {
  * Sirf REGULAR admin (product access ke saath) application par update/remark
  * ya status recommendation de sakta hai. Super Admin ka kaam sunna aur final
  * decision lena hai — woh loan par message nahi karta, isliye yahan 403.
- * (Final status PATCH /:id/status se hi hota hai, jo super admin ke liye khula
- * hai aur audit trail me kind: "status" ke roop me record hota hai.)
+ * (Status PATCH /:id/status se badalta hai — normal admin, `loans.decide` wala
+ * sub admin aur super admin, teeno ke liye — aur wo audit trail me
+ * kind: "status" ke roop me record hota hai.)
  */
 const addUpdateHandler = (resource) => async (req, res, next) => {
   try {
