@@ -10,7 +10,8 @@ Notifications API — /api/admin/notifications
   DELETE /read        -> sab receipts clear (feed unread ho jaati hai)
 
 Feed derive hoti hai (admin updates + reviews), isliye har signed-in admin ke
-liye available hai — normal admin ko sirf apne updates ka feedback milta hai.
+liye available hai — normal admin ko apne scope ke sabhi admins ke update aur
+apne updates ka feedback milta hai.
 ==========================================
 */
 
