@@ -34,6 +34,7 @@ Franchise API — mounted at /api/franchise
   POST /status/request-otp identity check -> registered mobile OTP (public)
   POST /status       OTP verify -> approval status (public)
   GET  /status       approval status (franchise token)
+  GET  /notifications franchise application + customer loan updates (page/limit)
   GET  /loans        loans via this FRN     (APPROVED franchise only)
 
 Franchise ke apne CUSTOMERS aur unke loans alag router me hain:
@@ -80,6 +81,11 @@ router.use("/customer", require("./franchiseCustomer.routes"));
 // Franchise (any approval status)
 router.get("/profile", auth, requireFranchise, loadFranchise, franchiseController.profile);
 router.get("/status", auth, requireFranchise, loadFranchise, franchiseController.status);
+
+// Franchise notifications (pending/rejected/approved and customer loan status)
+router.get("/notifications", auth, requireFranchise, loadFranchise, require("./franchiseNotification.controller").list);
+router.post("/notifications/read", auth, requireFranchise, loadFranchise, require("./franchiseNotification.controller").markRead);
+router.post("/notifications/read-all", auth, requireFranchise, loadFranchise, require("./franchiseNotification.controller").markAllRead);
 
 // Approved franchise only
 router.get("/loans", auth, requireApprovedFranchise, franchiseController.myLoans);
