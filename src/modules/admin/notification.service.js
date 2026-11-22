@@ -4,6 +4,11 @@ const { NotificationRead, MAX_KEY_LENGTH } = require("./notification.model");
 const { AdminReview } = require("./adminReview.model");
 const { listActivity } = require("./adminActivity.service");
 const { isSuperAdmin, isSubAdmin, hasPermission } = require("./adminLoanAccess");
+const Franchise = require("../franchise/franchise.model");
+const { FranchiseNotificationRead } = require("../franchise/franchiseNotification.model");
+const { FRANCHISE_STATUS } = require("../../constants/roles");
+const { MODELS } = require("../loans/shared/loanModels");
+const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 
 /*
 ==========================================
@@ -192,6 +197,66 @@ const buildReviewNotification = (review) => {
   };
 };
 
+/* ------------------------------- franchises ------------------------------- */
+
+/*
+Super admin franchise ko manage karta hai (approve / reject), isliye franchise
+application ke teen milestones uske feed me aate hain. Sub admin aur regular
+admin ka kaam loan products hai — unhe franchise rows nahi milti.
+*/
+const buildFranchiseNotification = (franchise) => {
+  const status = franchise.franchiseStatus;
+  const name = franchise.name || "A franchise";
+  const id = franchise._id ? String(franchise._id) : "";
+
+  let title;
+  let createdAt;
+  let priority;
+  let body = "";
+
+  if (status === FRANCHISE_STATUS.PENDING) {
+    title = `${name} applied for a franchise`;
+    createdAt = franchise.franchiseAppliedAt || franchise.createdAt;
+    priority = "normal";
+  } else if (status === FRANCHISE_STATUS.APPROVED) {
+    title = `Franchise ${name} approved`;
+    createdAt = franchise.franchiseApprovedAt || franchise.updatedAt;
+    priority = "high";
+  } else if (status === FRANCHISE_STATUS.REJECTED) {
+    title = `Franchise ${name} rejected`;
+    createdAt = franchise.franchiseRejectedAt || franchise.updatedAt;
+    priority = "high";
+    body = franchise.businessDetails?.adminNote || "";
+  } else {
+    return null;
+  }
+
+  return {
+    key: `franchise:${id}:${status}:${asIso(createdAt)}`,
+    source: "franchise",
+    kind: "franchise",
+    priority,
+    rank: status === FRANCHISE_STATUS.PENDING ? 2 : 1,
+    activityType: "franchise_application",
+    viewed: false,
+    viewedAt: null,
+    title,
+    body,
+    actorName: name,
+    /* Franchise admin nahi hai — role chip nahi lagta, sirf naam dikhta hai. */
+    actorRole: "",
+    entity: "franchise",
+    entityId: id,
+    applicationId: "",
+    applicationNo: franchise.franchiseId || null,
+    productLabel: "Franchise",
+    slug: "",
+    suggestedStatus: null,
+    path: id ? `/franchises/${id}` : "/franchises",
+    createdAt: asIso(createdAt),
+  };
+};
+
 const sortNotifications = (items) =>
   [...items].sort((left, right) => {
     const priority =
@@ -335,6 +400,174 @@ const listNotifications = async (viewer, query = {}) => {
     if (viewerIsPlainAdmin) item.body = "";
     items.push(item);
   });
+
+  if (viewerIsSuper) {
+    const franchises = await Franchise.find({
+      franchiseStatus: {
+        $in: [FRANCHISE_STATUS.PENDING, FRANCHISE_STATUS.APPROVED, FRANCHISE_STATUS.REJECTED],
+      },
+    })
+      .select(
+        "name franchiseId franchiseStatus franchiseAppliedAt franchiseApprovedAt franchiseRejectedAt businessDetails.adminNote createdAt updatedAt"
+      )
+      .limit(MAX_SCAN)
+      .lean();
+
+    /*
+    Franchise ne apni application notification padhi ya nahi — read receipts
+    (`franchise:<id>:application:<status>:<at>`) se pata chalta hai.
+    */
+    const receipts = franchises.length
+      ? await FranchiseNotificationRead.find({
+          franchiseId: { $in: franchises.map((franchise) => franchise._id) },
+        })
+          .select("franchiseId key readAt")
+          .sort({ readAt: -1 })
+          .lean()
+      : [];
+
+    const viewedAtByKey = new Map();
+    receipts.forEach((row) => {
+      const status = /^franchise:[^:]+:application:([^:]+):/.exec(String(row.key || ""))?.[1];
+      const at = new Date(row.readAt).getTime();
+      if (!status || !Number.isFinite(at)) return;
+      const key = `${String(row.franchiseId)}:${status}`;
+      const current = viewedAtByKey.get(key);
+      if (typeof current !== "number" || at > current) viewedAtByKey.set(key, at);
+    });
+
+    franchises.forEach((franchise) => {
+      const item = buildFranchiseNotification(franchise);
+      if (!item) return;
+      if (since && new Date(item.createdAt) < since) return;
+
+      const viewedAt = viewedAtByKey.get(`${String(franchise._id)}:${String(franchise.franchiseStatus || "")}`);
+      item.viewed = typeof viewedAt === "number";
+      item.viewedAt = typeof viewedAt === "number" ? new Date(viewedAt).toISOString() : null;
+      items.push(item);
+    });
+  }
+
+  /*
+  Franchise ne kaunsi notification padhi / read-all kiya — ye activity super admin
+  ko dikhni chahiye, warna franchise ka kaam review karne ka koi trail nahi.
+  Ek hi click se aayi rows 10 second ke bucket me group hoti hain.
+  */
+  if (viewerIsSuper) {
+    const receipts = await FranchiseNotificationRead.find(
+      since ? { readAt: { $gte: since } } : {}
+    )
+      .select("franchiseId key mode readAt")
+      .sort({ readAt: -1 })
+      .limit(MAX_SCAN)
+      .lean();
+
+    const grouped = new Map();
+    receipts.forEach((row) => {
+      const at = new Date(row.readAt).getTime();
+      if (!Number.isFinite(at)) return;
+      const mode = row.mode === "read_all" ? "read_all" : "read";
+      const bucket = Math.floor(at / 10000);
+      const key = `${row.franchiseId}:${mode}:${bucket}`;
+      const entry = grouped.get(key);
+      if (entry) {
+        entry.count += 1;
+        entry.at = Math.max(entry.at, at);
+        entry.keys.push(row.key);
+      } else {
+        grouped.set(key, { franchiseId: row.franchiseId, mode, bucket, count: 1, at, keys: [row.key] });
+      }
+    });
+
+    const ids = [...new Set([...grouped.values()].map((entry) => entry.franchiseId))];
+    const directory = new Map();
+    if (ids.length) {
+      const docs = await Franchise.find({ _id: { $in: ids } })
+        .select("name franchiseId")
+        .lean();
+      docs.forEach((doc) => directory.set(String(doc._id), doc));
+    }
+
+    /*
+    Read receipts ki keys me customer ka loan bhi hota hai
+    (`franchise:<id>:loan:<applicationNo>:...`), isliye super admin ko seedha
+    dikhta hai kis customer ke kis loan ka update franchise ne padha.
+    */
+    const loanNos = [
+      ...new Set(
+        [...grouped.values()].flatMap((entry) =>
+          entry.keys
+            .map((key) => /^franchise:[^:]+:loan:([^:]+):/.exec(String(key))?.[1])
+            .filter(Boolean)
+        )
+      ),
+    ].slice(0, 30);
+
+    const loanDirectory = new Map();
+    if (loanNos.length) {
+      await Promise.all(
+        Object.entries(MODELS).map(async ([productKey, Model]) => {
+          const docs = await Model.find({ applicationNo: { $in: loanNos } })
+            .select("applicationNo fullName")
+            .lean();
+          const label =
+            Object.values(RESOURCE_ROUTES).find((route) => route.productKey === productKey)?.label || "";
+          docs.forEach((doc) => {
+            if (!doc.applicationNo) return;
+            loanDirectory.set(doc.applicationNo, { customerName: doc.fullName || "", label });
+          });
+        })
+      );
+    }
+
+    grouped.forEach((entry) => {
+      const id = String(entry.franchiseId);
+      const doc = directory.get(id);
+      const name = doc?.name || "A franchise";
+      const count = entry.count;
+      const createdAt = new Date(entry.at).toISOString();
+      const readLoans = [
+        ...new Set(
+          entry.keys
+            .map((key) => /^franchise:[^:]+:loan:([^:]+):/.exec(String(key))?.[1])
+            .filter(Boolean)
+        ),
+      ].slice(0, 3);
+      const readDetail = readLoans
+        .map((no) => {
+          const info = loanDirectory.get(no);
+          const who = info?.customerName ? `${info.customerName} · ` : "";
+          return `${who}${no}${info?.label ? ` (${info.label})` : ""}`;
+        })
+        .join(", ");
+      items.push({
+        key: `franchise-read:${id}:${entry.mode}:${entry.bucket}`,
+        source: "franchise",
+        kind: "franchise",
+        priority: "low",
+        rank: 3,
+        title:
+          entry.mode === "read_all"
+            ? `${name} marked all notifications read`
+            : `${name} read ${count === 1 ? "a notification" : `${count} notifications`}`,
+        body: readDetail ? `${entry.mode === "read_all" ? "Includes: " : ""}${readDetail}` : "",
+        activityType: "franchise_read",
+        viewed: true,
+        viewedAt: createdAt,
+        actorName: name,
+        actorRole: "",
+        entity: "franchise",
+        entityId: id,
+        applicationId: "",
+        applicationNo: doc?.franchiseId || null,
+        productLabel: "Franchise",
+        slug: "",
+        suggestedStatus: null,
+        path: id ? `/franchises/${id}` : "/franchises",
+        createdAt,
+      });
+    });
+  }
 
   /* Ek hi query: page ke saath-saath unread count bhi isi se nikalta hai. */
   const readKeys = await readKeysFor(viewer.id, items.map((item) => item.key));
