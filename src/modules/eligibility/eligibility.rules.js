@@ -212,15 +212,8 @@ const calculateEligibility = ({ product, dateOfBirth, monthlyIncome, existingEmi
 
 module.exports = {
   ELIGIBILITY_PRODUCTS,
-  FOIR_PERCENT,
-  MIN_NET_INCOME,
-  MIN_AGE,
-  MAX_AGE,
-  MIN_LOAN_AMOUNT,
   findProduct,
   rateCard,
   ageInYears,
   calculateEligibility,
-  monthlyEmi,
-  principalFromEmi,
 };
