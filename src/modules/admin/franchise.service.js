@@ -2,6 +2,8 @@ const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 
 const Franchise = require("../franchise/franchise.model");
+const FranchiseCustomer = require("../franchise/franchiseCustomer.model");
+const { FranchiseNotificationRead } = require("../franchise/franchiseNotification.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
 const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
@@ -242,9 +244,98 @@ const countFranchiseLoans = async (franchiseObjectId, admin) => {
   return counts.reduce((sum, count) => sum + count, 0);
 };
 
+/*
+Franchise ne kaunse loan updates padhe — notification keys hi source hain
+(`franchise:<id>:loan:<applicationNo>:<status>:<at>`). Isliye har application
+par `franchiseViewed` + latest `franchiseViewedAt` derive hota hai, taaki admin
+ko franchise detail par pata rahe ki franchise ne update dekha ya nahi.
+*/
+const franchiseReadState = async (franchiseId) => {
+  const receipts = await FranchiseNotificationRead.find({ franchiseId })
+    .select("key readAt")
+    .lean();
+
+  const viewed = new Map();
+  receipts.forEach((row) => {
+    const match = /^franchise:[^:]+:loan:([^:]+):/.exec(row.key || "");
+    if (!match) return;
+    const at = new Date(row.readAt).getTime();
+    if (!Number.isFinite(at)) return;
+    const current = viewed.get(match[1]);
+    if (typeof current !== "number" || at > current) viewed.set(match[1], at);
+  });
+  return viewed;
+};
+
+const withReadState = (applications, viewed) =>
+  applications.map((application) => {
+    const applicationNo = application.applicationNo || String(application._id);
+    const at = viewed.get(applicationNo);
+    return {
+      ...application.toObject(),
+      franchiseViewed: typeof at === "number",
+      franchiseViewedAt: typeof at === "number" ? new Date(at).toISOString() : null,
+    };
+  });
+
+/*
+Franchise profile par "6 customers, 1 loan" ka farq clear ho — har registered
+customer + uske loan ka product/status (Rejected bhi), taaki koi customer chhoot
+na jaye. Sirf is franchise par scoped.
+*/
+const listFranchiseCustomersSummary = async (franchiseId, limit = 100) => {
+  const [customers, total] = await Promise.all([
+    FranchiseCustomer.find({ franchise: franchiseId })
+      .select("fullName mobile panNumber createdAt")
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean(),
+    FranchiseCustomer.countDocuments({ franchise: franchiseId }),
+  ]);
+
+  const byCustomer = new Map();
+  await Promise.all(
+    Object.entries(MODELS).map(async ([productKey, Model]) => {
+      const rows = await Model.find({ franchise: franchiseId })
+        .select("franchiseCustomer applicationNo status")
+        .lean();
+      const label =
+        Object.values(RESOURCE_ROUTES).find((route) => route.productKey === productKey)?.label ||
+        productKey;
+      rows.forEach((row) => {
+        if (!row.franchiseCustomer) return;
+        const key = String(row.franchiseCustomer);
+        const list = byCustomer.get(key) || [];
+        list.push({
+          product: label,
+          applicationNo: row.applicationNo || "",
+          status: row.status || "Submitted",
+        });
+        byCustomer.set(key, list);
+      });
+    })
+  );
+
+  const data = customers.map((customer) => {
+    const loans = byCustomer.get(String(customer._id)) || [];
+    return {
+      _id: customer._id,
+      fullName: customer.fullName || "",
+      mobile: customer.mobile || "",
+      createdAt: customer.createdAt,
+      loans,
+      loanCount: loans.length,
+      rejectedCount: loans.filter((loan) => loan.status === "Rejected").length,
+    };
+  });
+
+  return { total, data };
+};
+
 /** All applications filed through this franchise, grouped per product. */
 const listFranchiseLoans = async (id, admin) => {
   const franchise = await getFranchiseById(id);
+  const viewed = await franchiseReadState(franchise._id);
 
   const groups = await Promise.all(
     Object.values(RESOURCE_ROUTES)
@@ -257,7 +348,7 @@ const listFranchiseLoans = async (id, admin) => {
       return {
         product: entry.productKey,
         count: applications.length,
-        applications,
+        applications: withReadState(applications, viewed),
       };
     })
   );
@@ -286,5 +377,6 @@ module.exports = {
   resetFranchisePassword,
   countFranchiseLoans,
   listFranchiseLoans,
+  listFranchiseCustomersSummary,
   buildCredentials,
 };
