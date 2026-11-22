@@ -28,9 +28,7 @@ POST /api/eligibility/check
 */
 exports.check = async (req, res, next) => {
   try {
-    const { check, duplicate } = await service.createEligibilityCheck(req.body, {
-      ip: req.ip,
-    });
+    const { check, duplicate } = await service.createEligibilityCheck(req.body);
 
     res.status(duplicate ? 200 : 201).json({
       success: true,
@@ -62,15 +60,6 @@ exports.list = async (req, res, next) => {
 exports.stats = async (req, res, next) => {
   try {
     res.json({ success: true, stats: await service.eligibilityCheckStats() });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/* One check (super admin) */
-exports.getOne = async (req, res, next) => {
-  try {
-    res.json({ success: true, check: await service.getEligibilityCheck(req.params.id) });
   } catch (error) {
     next(error);
   }
