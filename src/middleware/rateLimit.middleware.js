@@ -96,6 +96,23 @@ const captchaLimiter = rateLimit({
   },
 });
 
+/*
+Public eligibility calculator — har submit par ek DB write hota hai, isliye
+contact form jaisa hi tight budget: 10 minute me 30 checks ek IP se. Insaan
+2-3 baar hi check karta hai; ye scripted spam rokta hai (dedupe service me
+hai — 1 minute ke andar same input dobara aane par naya row nahi banta).
+*/
+const eligibilityLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many eligibility checks from this device. Please try again in a few minutes.",
+  },
+});
+
 module.exports = {
   otpRequestLimiter,
   otpVerifyLimiter,
@@ -103,4 +120,5 @@ module.exports = {
   locationLimiter,
   contactLimiter,
   captchaLimiter,
+  eligibilityLimiter,
 };
