@@ -61,7 +61,6 @@ const eligibilityCheckSchema = new mongoose.Schema(
     reason: { type: String, default: null, trim: true, maxlength: 300 },
 
     source: { type: String, default: "website-eligibility-calculator", trim: true, maxlength: 80 },
-    ip: { type: String, default: "", maxlength: 45 },
   },
   { timestamps: true }
 );
