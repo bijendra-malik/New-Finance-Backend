@@ -276,13 +276,13 @@ const normalizeKeys = (keys) =>
       ]
     : [];
 
-const saveReadKeys = async (franchiseId, keys) => {
+const saveReadKeys = async (franchiseId, keys, mode = "read") => {
   if (!keys.length) return 0;
   await FranchiseNotificationRead.bulkWrite(
     keys.map((key) => ({
       updateOne: {
         filter: { franchiseId, key },
-        update: { $set: { franchiseId, key, readAt: new Date() } },
+        update: { $set: { franchiseId, key, readAt: new Date(), mode } },
         upsert: true,
       },
     })),
@@ -300,7 +300,7 @@ const markRead = async (franchise, keys) => {
     return { marked: 0, unread: feed.unread };
   }
 
-  const marked = await saveReadKeys(franchise._id, normalized);
+  const marked = await saveReadKeys(franchise._id, normalized, "read");
   const feed = await listNotifications(franchise, { limit: 1 });
   return { marked, unread: feed.unread };
 };
@@ -312,13 +312,48 @@ const markAllRead = async (franchise) => {
   if (!unreadKeys.length) return { marked: 0, unread: 0 };
 
   const keys = unreadKeys.slice(0, MAX_KEYS);
-  const marked = await saveReadKeys(franchise._id, keys);
+  const marked = await saveReadKeys(franchise._id, keys, "read_all");
 
   return { marked, unread: Math.max(0, unreadKeys.length - marked) };
+};
+
+/*
+Franchise ne kaun-kaun si notifications padhi — super admin franchise detail par
+ye trail dekhta hai. Receipts 10 second ke bucket me group hote hain, taaki
+"read all" ek hi row bane (5 notifications = ek event).
+*/
+const READ_GROUP_MS = 10000;
+const MAX_READ_EVENTS = 10;
+
+const listReadActivity = async (franchiseId, options = {}) => {
+  if (!franchiseId) return [];
+  const limit = toInt(options.limit, MAX_READ_EVENTS, 1, 25);
+
+  const receipts = await FranchiseNotificationRead.find({ franchiseId })
+    .select("mode readAt")
+    .sort({ readAt: -1 })
+    .limit(MAX_KEYS)
+    .lean();
+
+  const groups = new Map();
+  receipts.forEach((row) => {
+    const at = new Date(row.readAt).getTime();
+    if (!Number.isFinite(at)) return;
+    const mode = row.mode === "read_all" ? "read_all" : "read";
+    const key = `${mode}:${Math.floor(at / READ_GROUP_MS)}`;
+    const entry = groups.get(key);
+    if (entry) entry.count += 1;
+    else groups.set(key, { mode, count: 1, at: new Date(at).toISOString() });
+  });
+
+  return [...groups.values()]
+    .sort((left, right) => String(right.at).localeCompare(String(left.at)))
+    .slice(0, limit);
 };
 
 module.exports = {
   listNotifications,
   markRead,
   markAllRead,
+  listReadActivity,
 };
