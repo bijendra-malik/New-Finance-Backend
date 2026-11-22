@@ -249,6 +249,42 @@ const franchiseCustomerStats = async () => {
     };
   });
 
+  /*
+  Franchise ne apne customers ke kitne aur kaunse loan file kiye — har product
+  model par ek aggregate, taaki ek hi response me customer + loan dono dikhein.
+  */
+  const loanGroups = await Promise.all(
+    Object.entries(MODELS).map(async ([productKey, Model]) => {
+      const label =
+        Object.values(RESOURCE_ROUTES).find((route) => route.productKey === productKey)?.label ||
+        productKey;
+      const groups = await Model.aggregate([
+        { $match: { franchise: { $in: ids } } },
+        { $group: { _id: "$franchise", total: { $sum: 1 } } },
+      ]);
+      return { label, groups };
+    })
+  );
+
+  const loansByFranchise = new Map();
+  loanGroups.forEach(({ label, groups }) => {
+    groups.forEach((group) => {
+      if (!group._id || !group.total) return;
+      const id = String(group._id);
+      const entry = loansByFranchise.get(id) || { total: 0, byProduct: [] };
+      entry.total += group.total;
+      entry.byProduct.push({ product: label, count: group.total });
+      loansByFranchise.set(id, entry);
+    });
+  });
+
+  loansByFranchise.forEach((entry) => entry.byProduct.sort((left, right) => right.count - left.count));
+
+  byFranchise.forEach((row, index) => {
+    const id = rows[index]?._id ? String(rows[index]._id) : "";
+    row.loans = loansByFranchise.get(id) || { total: 0, byProduct: [] };
+  });
+
   const total = byFranchise.reduce((sum, row) => sum + row.total, 0);
 
   return { total, byFranchise };
