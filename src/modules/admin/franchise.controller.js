@@ -1,4 +1,5 @@
 const franchiseService = require("./franchise.service");
+const franchiseNotificationService = require("../franchise/franchiseNotification.service");
 const { addEntityUpdate } = require("./adminUpdate.service");
 
 /*
@@ -46,6 +47,14 @@ exports.getOne = async (req, res, next) => {
     const loanCount = isSuperAdmin
       ? await franchiseService.countFranchiseLoans(franchise._id, req.admin)
       : undefined;
+    /* Franchise ne kya padha / read-all kiya — sirf super admin ko dikhta hai. */
+    const readActivity = isSuperAdmin
+      ? await franchiseNotificationService.listReadActivity(franchise._id)
+      : undefined;
+    /* Registered customers + unke loans (rejected included) — super admin only. */
+    const customers = isSuperAdmin
+      ? await franchiseService.listFranchiseCustomersSummary(franchise._id)
+      : undefined;
 
     res.json({
       success: true,
@@ -54,6 +63,8 @@ exports.getOne = async (req, res, next) => {
             // Credentials and loan totals are restricted to Super Admins.
             credentials: franchiseService.buildCredentials(franchise),
             loanCount,
+            readActivity,
+            customers,
           }
         : {}),
       franchise,
