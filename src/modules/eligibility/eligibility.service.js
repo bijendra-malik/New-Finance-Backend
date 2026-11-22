@@ -24,12 +24,6 @@ const badRequest = (message) => {
   return error;
 };
 
-const notFound = (message = "Eligibility check not found") => {
-  const error = new Error(message);
-  error.statusCode = 404;
-  return error;
-};
-
 const text = (value) => {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -196,7 +190,7 @@ const toCheckView = (doc) => {
  * Same mobile + product + income 1 minute me dobara aaye to naya row nahi
  * banta (double click / retry), wahi result wapas milta hai.
  */
-const createEligibilityCheck = async (body = {}, meta = {}) => {
+const createEligibilityCheck = async (body = {}) => {
   const input = validateInput(body);
   const result = calculateEligibility(input);
 
@@ -236,7 +230,6 @@ const createEligibilityCheck = async (body = {}, meta = {}) => {
     eligible: result.eligible,
     reason: result.reason,
     source: text(body.source) || "website-eligibility-calculator",
-    ...(meta.ip ? { ip: String(meta.ip).slice(0, 45) } : {}),
   });
 
   return { check: toCheckView(created), duplicate: false };
@@ -357,18 +350,9 @@ const eligibilityCheckStats = async () => {
   };
 };
 
-const getEligibilityCheck = async (id) => {
-  const doc = await EligibilityCheck.findById(id).lean();
-  if (!doc) throw notFound();
-  return toCheckView(doc);
-};
-
 module.exports = {
   rateCard,
-  validateInput,
-  toCheckView,
   createEligibilityCheck,
   listEligibilityChecks,
   eligibilityCheckStats,
-  getEligibilityCheck,
 };
