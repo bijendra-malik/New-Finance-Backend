@@ -99,4 +99,15 @@ router.use("/franchise-plans", adminAuth, requireSuperAdmin, require("./franchis
 /* Franchise ke customers ka pooro network view (read-only admin view). */
 router.use("/franchise-customers", adminAuth, requireSuperAdmin, require("./franchiseCustomer.routes"));
 
+/*
+Website eligibility calculator ke checks (kisne check kiya, eligible tha ya
+nahi). PII hai aur poora network-level data hai, isliye super admin only.
+*/
+router.use(
+  "/eligibility-checks",
+  adminAuth,
+  requireSuperAdmin,
+  require("./eligibilityCheck.routes")
+);
+
 module.exports = router;
