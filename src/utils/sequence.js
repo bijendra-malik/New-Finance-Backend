@@ -76,6 +76,18 @@ const nextCustomerId = async () => {
   }
 };
 
+/*
+Eligibility calculator ka public reference (ELG000001). Website par ye
+reference user ko dikhta hai aur admin panel/support isi se check dhoondhta hai.
+*/
+const nextEligibilityCheckNo = async () => {
+  try {
+    return formatId("ELG", await nextSequence("eligibilityCheck"));
+  } catch (error) {
+    return randomId("ELG");
+  }
+};
+
 module.exports = {
   Counter,
   nextSequence,
@@ -83,4 +95,5 @@ module.exports = {
   nextLoanApplicationNo,
   nextFranchiseCode,
   nextCustomerId,
+  nextEligibilityCheckNo,
 };
