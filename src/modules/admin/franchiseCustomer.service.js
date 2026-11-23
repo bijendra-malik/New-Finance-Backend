@@ -4,7 +4,6 @@ const FranchiseCustomer = require("../franchise/franchiseCustomer.model");
 const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
-const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
 const {
   serializeCustomer,
   listCustomerLoans,
@@ -83,28 +82,22 @@ Franchise-side helper `franchise: <id>` par scoped tha; admin ke list me poore
 network ke rows aate hain, isliye yahan sirf `franchiseCustomer` par group
 hota hai.
 */
-const attachLoanCounts = async (rows, admin) => {
+const attachLoanCounts = async (rows) => {
   if (!rows.length) return rows;
 
   const aggregates = await Promise.all(
-    Object.values(RESOURCE_ROUTES)
-      .filter((entry) => hasProductAccess(admin, entry.productKey))
-      .map((entry) =>
-        MODELS[entry.productKey].aggregate([
-          {
-            $match: visibleLoanFilter(admin, {
-              franchiseCustomer: { $in: rows.map((row) => row._id) },
-            }),
+    Object.values(RESOURCE_ROUTES).map((entry) =>
+      MODELS[entry.productKey].aggregate([
+        { $match: { franchiseCustomer: { $in: rows.map((row) => row._id) } } },
+        {
+          $group: {
+            _id: "$franchiseCustomer",
+            count: { $sum: 1 },
+            lastAppliedAt: { $max: "$createdAt" },
           },
-          {
-            $group: {
-              _id: "$franchiseCustomer",
-              count: { $sum: 1 },
-              lastAppliedAt: { $max: "$createdAt" },
-            },
-          },
-        ])
-      )
+        },
+      ])
+    )
   );
 
   const byCustomer = new Map();
@@ -162,7 +155,7 @@ const pageArgs = ({ page, limit } = {}) => {
 
 /* --------------------------------------------------------------- read -- */
 
-const listFranchiseCustomers = async (query = {}, admin) => {
+const listFranchiseCustomers = async (query = {}) => {
   const filter = buildFilter(query);
   const { safeLimit, pageNumber } = pageArgs(query);
 
@@ -172,7 +165,7 @@ const listFranchiseCustomers = async (query = {}, admin) => {
   const docs = await findQuery;
   const rows = docs.map(serializeCustomer);
 
-  return attachLoanCounts(await attachFranchiseInfo(rows), admin);
+  return attachLoanCounts(await attachFranchiseInfo(rows));
 };
 
 const countFranchiseCustomers = async (query = {}) =>
@@ -182,7 +175,7 @@ const countFranchiseCustomers = async (query = {}) =>
 Ek customer ka poora detail: customer, owner franchise ka summary, aur usi ke
 loans ka wahi grouped status view jo franchise apne dashboard par dekhta hai.
 */
-const getFranchiseCustomer = async (id, admin) => {
+const getFranchiseCustomer = async (id) => {
   if (!mongoose.isValidObjectId(id)) throw notFound("Franchise customer not found");
 
   const customer = await FranchiseCustomer.findById(id);
@@ -192,12 +185,7 @@ const getFranchiseCustomer = async (id, admin) => {
     Franchise.findById(customer.franchise).select("name franchiseId franchiseStatus"),
     // Sirf wahi customer + wahi owner franchise scope (service internally
     // `{ _id, franchise }` par match karti hai).
-    listCustomerLoans({ _id: customer.franchise }, id, {
-      productKeys: Object.entries(MODELS)
-        .filter(([productKey]) => hasProductAccess(admin, productKey))
-        .map(([productKey]) => productKey),
-      includeRejected: !admin || admin.role === "SuperAdmin",
-    }),
+    listCustomerLoans({ _id: customer.franchise }, id),
   ]);
 
   return {
@@ -291,7 +279,6 @@ const franchiseCustomerStats = async () => {
 };
 
 module.exports = {
-  buildFilter,
   listFranchiseCustomers,
   countFranchiseCustomers,
   getFranchiseCustomer,
