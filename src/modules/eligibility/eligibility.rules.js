@@ -88,7 +88,6 @@ const rateCard = () =>
     label,
     roi,
     tenureMonths,
-    tenureYears: tenureMonths ? Math.round((tenureMonths / 12) * 10) / 10 : null,
     rateOnRequest: roi === null,
   }));
 
