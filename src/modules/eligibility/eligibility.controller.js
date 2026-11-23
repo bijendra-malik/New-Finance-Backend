@@ -5,7 +5,7 @@ const service = require("./eligibility.service");
 Eligibility controllers
 
 Public : GET /api/eligibility/rate-card, POST /api/eligibility/check
-Admin  : /api/admin/eligibility-checks (list, stats, detail)
+Admin  : /api/admin/eligibility-checks (list, stats)
 ==========================================
 */
 
