@@ -43,30 +43,23 @@ GET /api/admin/franchises/:id
 exports.getOne = async (req, res, next) => {
   try {
     const franchise = await franchiseService.getFranchiseById(req.params.id);
-    const isSuperAdmin = req.admin?.role === "SuperAdmin";
-    const loanCount = isSuperAdmin
-      ? await franchiseService.countFranchiseLoans(franchise._id, req.admin)
-      : undefined;
-    /* Franchise ne kya padha / read-all kiya — sirf super admin ko dikhta hai. */
-    const readActivity = isSuperAdmin
-      ? await franchiseNotificationService.listReadActivity(franchise._id)
-      : undefined;
-    /* Registered customers + unke loans (rejected included) — super admin only. */
-    const customers = isSuperAdmin
-      ? await franchiseService.listFranchiseCustomersSummary(franchise._id)
-      : undefined;
+
+    /*
+    Route franchise module se gated hai, isliye detail ke saath credentials,
+    read activity aur registered customers bhi wapas jaate hain — module wale
+    admin ko franchise poora handle karna hai. Loan total `/loans` endpoint deta
+    hai, isliye yahan dobara count nahi kiya jaata.
+    */
+    const [readActivity, customers] = await Promise.all([
+      franchiseNotificationService.listReadActivity(franchise._id),
+      franchiseService.listFranchiseCustomersSummary(franchise._id),
+    ]);
 
     res.json({
       success: true,
-      ...(isSuperAdmin
-        ? {
-            // Credentials and loan totals are restricted to Super Admins.
-            credentials: franchiseService.buildCredentials(franchise),
-            loanCount,
-            readActivity,
-            customers,
-          }
-        : {}),
+      credentials: franchiseService.buildCredentials(franchise),
+      readActivity,
+      customers,
       franchise,
     });
   } catch (error) {
@@ -81,7 +74,7 @@ PATCH /api/admin/franchises/:id/approve
 exports.approve = async (req, res, next) => {
   try {
     /* Decision + uska trail ek hi save me service ke andar likhe jaate hain. */
-    const franchise = await franchiseService.approveFranchise(req.params.id, req);
+    const franchise = await franchiseService.setFranchiseStatus(req.params.id, "Approved", req);
 
     res.json({
       success: true,
@@ -103,7 +96,7 @@ exports.reject = async (req, res, next) => {
   try {
     const { note } = req.body ?? {};
     /* Decision + uska trail ek hi save me service ke andar. */
-    const franchise = await franchiseService.rejectFranchise(req.params.id, note, req);
+    const franchise = await franchiseService.setFranchiseStatus(req.params.id, "Rejected", req, note);
 
     res.json({
       success: true,
@@ -127,6 +120,34 @@ exports.resetPassword = async (req, res, next) => {
     res.json({
       success: true,
       message: `Credentials reset. Login ID: ${franchise.franchiseId}`,
+      credentials: franchiseService.buildCredentials(franchise),
+      franchise,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Set franchise status   { status: "Pending" | "Approved" | "Rejected", note? }
+PATCH /api/admin/franchises/:id/status
+
+Approve/reject isi service path se jaate hain, isliye koi bhi status kisi bhi
+status se set ho sakta hai (jaise rejected application ko dobara approve karna).
+*/
+exports.setStatus = async (req, res, next) => {
+  try {
+    const { status, note } = req.body ?? {};
+    const franchise = await franchiseService.setFranchiseStatus(
+      req.params.id,
+      status,
+      req,
+      note
+    );
+
+    res.json({
+      success: true,
+      message: `Franchise status changed to ${franchise.franchiseStatus}`,
       credentials: franchiseService.buildCredentials(franchise),
       franchise,
     });
@@ -172,7 +193,7 @@ GET /api/admin/franchises/:id/loans
 */
 exports.loans = async (req, res, next) => {
   try {
-    const result = await franchiseService.listFranchiseLoans(req.params.id, req.admin);
+    const result = await franchiseService.listFranchiseLoans(req.params.id);
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);
