@@ -2,6 +2,9 @@ const User = require("../auth/user.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const mongoose = require("mongoose");
 const { USER_ROLE } = require("../../constants/roles");
+const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
+const { describeLoanStatus } = require("../loans/shared/loanStatus");
+const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
 
 /*
 ==========================================
@@ -131,7 +134,77 @@ const deleteCustomer = async (id) => {
   return { customer, removedApplications: total };
 };
 
+/*
+==========================================
+Customer overview (read-only)
+GET /api/admin/customers/:id/overview
+
+Account details + us customer ke saare loan applications, product-wise grouped.
+Product-access rule wahi hai jo GET /customers/:id/applications par lagta hai:
+admin ko sirf apne assigned products ke applications dikhte hain, aur restricted
+admin ko franchise-origin applications nahi dikhte. Yahan se koi decision
+nahi hota — sirf padhne ka overview.
+==========================================
+*/
+
+const getCustomerOverview = async (id, admin) => {
+  const customer = await getCustomerById(id);
+
+  const groups = await Promise.all(
+    Object.values(RESOURCE_ROUTES)
+      .filter((entry) => hasProductAccess(admin, entry.productKey))
+      .map(async (entry) => {
+        const applications = await MODELS[entry.productKey]
+          .find(visibleLoanFilter(admin, { user: customer._id }))
+          .sort({ createdAt: -1 });
+
+        if (!applications.length) return null;
+
+        return {
+          product: entry.productKey,
+          label: entry.label,
+          count: applications.length,
+          applications: applications.map((application) => {
+            const status = application.status || "Submitted";
+            const info = describeLoanStatus(status);
+
+            return {
+              _id: application._id,
+              applicationNo: application.applicationNo || null,
+              loanAmount: application.loanAmount ?? null,
+              status,
+              stage: info.stage,
+              step: info.step,
+              submittedAt: application.createdAt || null,
+              decisionAt: application.approvedAt || application.rejectedAt || null,
+              adminNote: application.adminNote || "",
+            };
+          }),
+        };
+      })
+  );
+
+  const data = groups.filter(Boolean);
+  const byStatus = { Submitted: 0, Pending: 0, Approved: 0, Rejected: 0 };
+
+  data.forEach((group) =>
+    group.applications.forEach((application) => {
+      byStatus[application.status] = (byStatus[application.status] || 0) + 1;
+    })
+  );
+
+  return {
+    customer,
+    loans: {
+      total: data.reduce((sum, group) => sum + group.count, 0),
+      byStatus,
+      data,
+    },
+  };
+};
+
 module.exports = {
+  getCustomerOverview,
   CUSTOMER_FILTER,
   listCustomers,
   getCustomerById,
