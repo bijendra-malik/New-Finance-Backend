@@ -18,7 +18,7 @@ exports.list = async (req, res, next) => {
     const { search, franchise, page, limit } = req.query;
 
     const [customers, total] = await Promise.all([
-      service.listFranchiseCustomers({ search, franchise, page, limit }, req.admin),
+      service.listFranchiseCustomers({ search, franchise, page, limit }),
       service.countFranchiseCustomers({ search, franchise }),
     ]);
 
@@ -56,10 +56,7 @@ GET /api/admin/franchise-customers/:id
 */
 exports.getOne = async (req, res, next) => {
   try {
-    const { customer, franchise, loans } = await service.getFranchiseCustomer(
-      req.params.id,
-      req.admin
-    );
+    const { customer, franchise, loans } = await service.getFranchiseCustomer(req.params.id);
 
     res.json({ success: true, customer, franchise, loans });
   } catch (error) {
