@@ -140,7 +140,6 @@ const validateInput = (body = {}) => {
     mobile,
     email,
     dateOfBirth,
-    age,
     country,
     occupation,
     product,
@@ -149,12 +148,9 @@ const validateInput = (body = {}) => {
   };
 };
 
-const round1 = (value) => Math.round(value * 10) / 10;
-
-/* Ek hi response shape — public result, admin list aur detail. */
+/* Ek hi response shape — public result aur admin list. */
 const toCheckView = (doc) => {
   const item = typeof doc?.toObject === "function" ? doc.toObject() : { ...doc };
-  const tenureMonths = item.tenureMonths ?? null;
 
   return {
     id: String(item._id ?? item.id ?? ""),
@@ -174,8 +170,7 @@ const toCheckView = (doc) => {
     foirPercent: item.foirPercent ?? null,
     maxEmi: item.maxEmi ?? 0,
     roi: item.roi ?? null,
-    tenureMonths,
-    tenureYears: tenureMonths ? round1(tenureMonths / 12) : null,
+    tenureMonths: item.tenureMonths ?? null,
     maxLoanAmount: item.maxLoanAmount ?? null,
     emi: item.emi ?? null,
     eligible: Boolean(item.eligible),
