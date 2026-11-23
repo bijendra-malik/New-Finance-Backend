@@ -175,3 +175,25 @@ GET /api/admin/customers/:id/applications
 ==========================================
 */
 exports.listApplications = listCustomerApplications;
+
+/*
+==========================================
+Customer overview (read-only)
+GET /api/admin/customers/:id/overview
+
+Customer + uske loans ka product-wise summary; drawer/list se alag ek poora
+overview page isi par banta hai.
+==========================================
+*/
+exports.overview = async (req, res, next) => {
+  try {
+    const { customer, loans } = await customerService.getCustomerOverview(
+      req.params.id,
+      req.admin
+    );
+
+    res.json({ success: true, customer, loans });
+  } catch (error) {
+    next(error);
+  }
+};
