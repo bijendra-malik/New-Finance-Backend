@@ -81,13 +81,12 @@ router.use(
   require("./customer.routes")
 );
 
-router.use(
-  "/franchises",
-  adminAuth,
-  readOnlyForSubAdmin,
-  requireModuleAccess("franchises"),
-  require("./franchise.routes")
-);
+/*
+Franchise module assign hone ka matlab hai: poora franchise handle karna.
+Isliye sub admin bhi yahan approve/reject kar sakta hai — `readOnlyForSubAdmin`
+sirf customers/masters jaise record modules par lagta hai.
+*/
+router.use("/franchises", adminAuth, requireModuleAccess("franchises"), require("./franchise.routes"));
 
 /*
 Franchise investment plans — admin yahan fee / validity / renewal edit karta
@@ -96,8 +95,12 @@ jaata hai. "/franchises" se alag prefix hai, isliye order ka issue nahi.
 */
 router.use("/franchise-plans", adminAuth, requireSuperAdmin, require("./franchisePlan.routes"));
 
-/* Franchise ke customers ka pooro network view (read-only admin view). */
-router.use("/franchise-customers", adminAuth, requireSuperAdmin, require("./franchiseCustomer.routes"));
+/*
+Franchise ke customers ka poora network view (read-only). Franchise module
+wale admin (regular ya sub admin) ko bhi dikhta hai, warna wo franchise handle
+hi nahi kar sakta.
+*/
+router.use("/franchise-customers", adminAuth, requireModuleAccess("franchises"), require("./franchiseCustomer.routes"));
 
 /*
 Website eligibility calculator ke checks (kisne check kiya, eligible tha ya
