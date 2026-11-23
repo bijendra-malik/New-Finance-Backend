@@ -147,7 +147,10 @@ describe("admin franchise management reads the franchises collection", () => {
     };
     Franchise.findOne.mockResolvedValue(franchise);
 
-    const approved = await adminFranchiseService.approveFranchise(franchise._id.toString());
+    const approved = await adminFranchiseService.setFranchiseStatus(
+      franchise._id.toString(),
+      "Approved"
+    );
 
     expect(approved.franchiseId).toMatch(/^FRN\d{6}$/);
     expect(approved.franchiseStatus).toBe("Approved");
