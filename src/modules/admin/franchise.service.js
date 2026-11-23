@@ -6,7 +6,6 @@ const FranchiseCustomer = require("../franchise/franchiseCustomer.model");
 const { FranchiseNotificationRead } = require("../franchise/franchiseNotification.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
-const { hasProductAccess, visibleLoanFilter } = require("./adminLoanAccess");
 const { pushStatusUpdate } = require("./adminUpdate.service");
 const { nextFranchiseCode } = require("../../utils/sequence");
 const {
@@ -20,8 +19,8 @@ Admin franchise endpoints.
 
   listFranchises      GET    /api/admin/franchises
   getFranchiseById    GET    /api/admin/franchises/:id
-  approveFranchise    PATCH  /api/admin/franchises/:id/approve
-  rejectFranchise     PATCH  /api/admin/franchises/:id/reject
+  setFranchiseStatus  PATCH  /api/admin/franchises/:id/status
+  resetFranchisePassword  PATCH  /api/admin/franchises/:id/reset-password
   listFranchiseLoans  GET    /api/admin/franchises/:id/loans
 
 Approving mints the FRN code AND sets the initial password (the franchise's PAN
@@ -140,64 +139,65 @@ const getFranchiseById = async (id) => {
   return franchise;
 };
 
-const approveFranchise = async (id, req) => {
+/*
+Ek hi path se status badalta hai — approve/reject bhi isi se jaate hain.
+Isliye Approved -> Rejected, Rejected -> Approved ya Pending par wapas le
+jaana sab possible hai, aur har change ka audit entry banta hai.
+*/
+const setFranchiseStatus = async (id, status, req, note) => {
+  const next = String(status ?? "").trim();
+  if (!FRANCHISE_STATUS_VALUES.includes(next)) {
+    throw badRequest(`Status must be one of: ${FRANCHISE_STATUS_VALUES.join(", ")}`);
+  }
+
   const franchise = await getFranchiseById(id);
-
-  if (franchise.franchiseStatus === FRANCHISE_STATUS.APPROVED) {
-    throw conflict("This franchise is already approved");
+  if (franchise.franchiseStatus === next) {
+    throw conflict(`This franchise is already ${next.toLowerCase()}`);
   }
 
-  if (!franchise.panNumber) {
-    throw badRequest("This application is incomplete — the franchise must submit its details first");
+  const reason = String(note ?? "").trim();
+
+  if (next === FRANCHISE_STATUS.APPROVED) {
+    if (!franchise.panNumber) {
+      throw badRequest("This application is incomplete — the franchise must submit its details first");
+    }
+    /* FRN code ek hi baar mint hota hai; re-approve par wahi login ID rehta hai. */
+    if (!franchise.franchiseId) franchise.franchiseId = await nextFranchiseCode();
+    franchise.password = await hashPanPassword(franchise);
+    franchise.franchiseApprovedAt = new Date();
+    franchise.franchiseRejectedAt = null;
+  } else if (next === FRANCHISE_STATUS.REJECTED) {
+    franchise.franchiseRejectedAt = new Date();
+  } else {
+    franchise.franchiseApprovedAt = null;
+    franchise.franchiseRejectedAt = null;
   }
 
-  // Mint the public FRN code and set the initial password from the PAN number
-  // (hashed). The partner logs in with FRN + PAN.
-  franchise.franchiseId = await nextFranchiseCode();
-  franchise.password = await hashPanPassword(franchise);
-  franchise.franchiseStatus = FRANCHISE_STATUS.APPROVED;
-  franchise.franchiseApprovedAt = new Date();
-  franchise.franchiseRejectedAt = null;
+  franchise.franchiseStatus = next;
 
-  /*
-  Decision aur uska audit entry ek hi save me. Pehle status yahan save hota tha
-  aur trail controller me alag write hota tha: doosra write fail hone par record
-  approved dikhta, par trail me decision ka koi nishan na hota.
-  */
+  /* adminNote rejection reason hi hai — approve/pending par saaf kar dete hain. */
+  if (next === FRANCHISE_STATUS.REJECTED) {
+    if (reason) {
+      franchise.businessDetails = { ...(franchise.businessDetails || {}), adminNote: reason };
+    }
+  } else if (franchise.businessDetails?.adminNote) {
+    franchise.businessDetails = { ...franchise.businessDetails, adminNote: "" };
+  }
+
+  const text =
+    next === FRANCHISE_STATUS.APPROVED
+      ? `Franchise approved${franchise.franchiseId ? ` — login ID ${franchise.franchiseId}` : ""}`
+      : next === FRANCHISE_STATUS.REJECTED
+        ? `Franchise rejected${reason ? ` — ${reason}` : ""}`
+        : "Franchise status changed to Pending";
+
+  /* Decision aur uska audit entry ek hi save me. */
   pushStatusUpdate(franchise, req, {
     entity: "franchise",
-    tag: "verification",
-    status: FRANCHISE_STATUS.APPROVED,
-    text: `Franchise approved${franchise.franchiseId ? ` — login ID ${franchise.franchiseId}` : ""}`,
-  });
-
-  await franchise.save();
-
-  return withoutPassword(franchise);
-};
-
-const rejectFranchise = async (id, note, req) => {
-  const franchise = await getFranchiseById(id);
-
-  if (franchise.franchiseStatus === FRANCHISE_STATUS.REJECTED) {
-    throw conflict("This franchise is already rejected");
-  }
-
-  franchise.franchiseStatus = FRANCHISE_STATUS.REJECTED;
-  franchise.franchiseRejectedAt = new Date();
-  if (note !== undefined && note !== null) {
-    franchise.businessDetails = {
-      ...(franchise.businessDetails || {}),
-      adminNote: String(note).trim(),
-    };
-  }
-
-  /* Status + trail ek hi save me (dekho approveFranchise). */
-  pushStatusUpdate(franchise, req, {
-    entity: "franchise",
-    tag: "flag",
-    status: FRANCHISE_STATUS.REJECTED,
-    text: `Franchise rejected${note && String(note).trim() ? ` — ${String(note).trim()}` : ""}`,
+    tag: next === FRANCHISE_STATUS.REJECTED ? "flag" : "verification",
+    /* Pending koi decision nahi hai — decision enum sirf Approved/Rejected. */
+    status: next === FRANCHISE_STATUS.PENDING ? null : next,
+    text,
   });
 
   await franchise.save();
@@ -230,20 +230,6 @@ const resetFranchisePassword = async (id) => {
 };
 
 /** How many applications were filed through this franchise, across all products. */
-const countFranchiseLoans = async (franchiseObjectId, admin) => {
-  const counts = await Promise.all(
-    Object.values(RESOURCE_ROUTES)
-      .filter((entry) => hasProductAccess(admin, entry.productKey))
-      .map((entry) =>
-        MODELS[entry.productKey].countDocuments(
-          visibleLoanFilter(admin, { franchise: franchiseObjectId })
-        )
-      )
-  );
-
-  return counts.reduce((sum, count) => sum + count, 0);
-};
-
 /*
 Franchise ne kaunse loan updates padhe — notification keys hi source hain
 (`franchise:<id>:loan:<applicationNo>:<status>:<at>`). Isliye har application
@@ -333,16 +319,14 @@ const listFranchiseCustomersSummary = async (franchiseId, limit = 100) => {
 };
 
 /** All applications filed through this franchise, grouped per product. */
-const listFranchiseLoans = async (id, admin) => {
+const listFranchiseLoans = async (id) => {
   const franchise = await getFranchiseById(id);
   const viewed = await franchiseReadState(franchise._id);
 
   const groups = await Promise.all(
-    Object.values(RESOURCE_ROUTES)
-      .filter((entry) => hasProductAccess(admin, entry.productKey))
-      .map(async (entry) => {
+    Object.values(RESOURCE_ROUTES).map(async (entry) => {
       const applications = await MODELS[entry.productKey]
-        .find(visibleLoanFilter(admin, { franchise: franchise._id }))
+        .find({ franchise: franchise._id })
         .sort({ createdAt: -1 });
       if (!applications.length) return null;
       return {
@@ -372,10 +356,8 @@ module.exports = {
   listFranchises,
   countFranchises,
   getFranchiseById,
-  approveFranchise,
-  rejectFranchise,
+  setFranchiseStatus,
   resetFranchisePassword,
-  countFranchiseLoans,
   listFranchiseLoans,
   listFranchiseCustomersSummary,
   buildCredentials,
