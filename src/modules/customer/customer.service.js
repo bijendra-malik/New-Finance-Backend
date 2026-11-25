@@ -279,6 +279,8 @@ const buildStatusView = (productKey, doc) => {
   }
 
   return {
+    /* Admin panel application number se dhoondhne ke bajaye seedha khol sake. */
+    applicationId: raw._id ? String(raw._id) : null,
     applicationNo: raw.applicationNo || null,
     product: productKey,
     loanType: raw.loanType || LOAN_PRODUCTS[productKey]?.loanType || null,
