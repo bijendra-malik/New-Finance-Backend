@@ -55,8 +55,8 @@ Product workspaces me restricted admin ko apne assigned product ke direct
 customer applications dikhte hain — Submitted, Pending, Approved aur Rejected
 sab. Customer module access sirf customer listing/profile ke liye hai; woh loan
 product workspaces ya applications ka access nahi deta. Franchise-origin
-applications franchise ke separate workflow me rehte hain, so only SuperAdmin
-can see them through product endpoints.
+applications franchise-scope admin ke liye sirf franchise customers tak rehti hain
+(isFranchiseScope), warna SuperAdmin ke liye sab khula hai.
 
 Pehle yahan `status: { $ne: "Rejected" }` laga hua tha, jiski wajah se:
   - admin ko apne hi product ki rejected applications list me dikhti hi nahi
@@ -65,8 +65,23 @@ Pehle yahan `status: { $ne: "Rejected" }` laga hua tha, jiski wajah se:
   - "Reject Loans" page restricted admin ke liye 403 deta tha.
 Ab status sirf data ka hissa hai, chhupane ki wajah nahi.
 */
+/*
+Franchise-scope admin (Franchises module, Customers nahi) ko pehle `franchise: null`
+milta tha, is liye franchise customer ki application list se chhup jaati thi aur
+admin panel use application number se bhi nahi khol sakta tha. Ab uska filter ulta
+hai: sirf franchise customers ki applications.
+*/
+const isFranchiseScope = (admin) =>
+  !isSuperAdmin(admin) &&
+  hasModuleAccess(admin, "franchises") &&
+  !hasModuleAccess(admin, "customers");
+
 const visibleLoanFilter = (admin, filter = {}) => {
-  return isSuperAdmin(admin) ? filter : { ...filter, franchise: null };
+  if (isSuperAdmin(admin)) return filter;
+  if (isFranchiseScope(admin)) {
+    return { ...filter, franchiseCustomer: { $ne: null } };
+  }
+  return { ...filter, franchise: null };
 };
 
 const requireLoanAccess = (productKey) => (req, res, next) => {
@@ -171,6 +186,7 @@ module.exports = {
   hasLoanAccess,
   hasProductAccess,
   hasModuleAccess,
+  isFranchiseScope,
   visibleLoanFilter,
   requireLoanAccess,
   requireModuleAccess,
