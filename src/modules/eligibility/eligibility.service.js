@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 
 const { EligibilityCheck } = require("./eligibility.model");
 const { rateCard, calculateEligibility } = require("./eligibility.rules");
@@ -26,6 +27,12 @@ const MAX_MESSAGE = 1200;
 const clampText = (value, max) => {
   const trimmed = text(value);
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
+};
+
+const notFound = (message = "Eligibility check not found") => {
+  const error = new Error(message);
+  error.statusCode = 404;
+  return error;
 };
 
 /* Ek hi flat view — public response aur admin list dono isi shape par chalte hain. */
@@ -230,6 +237,29 @@ const listEligibilityChecks = async (filters = {}) => {
   };
 };
 
+/*
+Admin drawer: ek check ka poora record.
+Invalid / purani id par bhi 404 milta hai — mongoose ka cast error 500 na bane.
+*/
+const getEligibilityCheck = async (id) => {
+  if (!mongoose.isValidObjectId(id)) throw notFound();
+
+  const doc = await EligibilityCheck.findById(id).lean();
+  if (!doc) throw notFound();
+
+  return toCheckView(doc);
+};
+
+/* Permanent delete — route already super-admin only hai. */
+const deleteEligibilityCheck = async (id) => {
+  if (!mongoose.isValidObjectId(id)) throw notFound();
+
+  const removed = await EligibilityCheck.findByIdAndDelete(id).lean();
+  if (!removed) throw notFound();
+
+  return toCheckView(removed);
+};
+
 /* Dashboard ke top cards + product-wise breakdown. */
 const eligibilityCheckStats = async () => {
   const startOfToday = new Date();
@@ -278,6 +308,8 @@ const eligibilityCheckStats = async () => {
 module.exports = {
   rateCard,
   createEligibilityCheck,
+  getEligibilityCheck,
+  deleteEligibilityCheck,
   listEligibilityChecks,
   eligibilityCheckStats,
 };
