@@ -74,6 +74,35 @@ exports.list = async (req, res, next) => {
   }
 };
 
+/*
+Single check (super admin)
+GET /api/admin/eligibility-checks/:id
+Admin drawer isko call karta hai — list row ka latest version.
+*/
+exports.getOne = async (req, res, next) => {
+  try {
+    res.json({ success: true, check: await service.getEligibilityCheck(req.params.id) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+Delete check (super admin)
+DELETE /api/admin/eligibility-checks/:id
+Permanent hai — deleted row wapas nahi aata aur uska checkNo bhi release nahi
+hota (sequence aage hi badhta hai).
+*/
+exports.remove = async (req, res, next) => {
+  try {
+    const check = await service.deleteEligibilityCheck(req.params.id);
+
+    res.json({ success: true, message: "Eligibility check deleted successfully", check });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /* Dashboard cards + product breakdown (super admin) */
 exports.stats = async (req, res, next) => {
   try {
