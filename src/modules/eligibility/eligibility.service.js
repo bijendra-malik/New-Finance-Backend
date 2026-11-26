@@ -250,14 +250,11 @@ const getEligibilityCheck = async (id) => {
   return toCheckView(doc);
 };
 
-/* Permanent delete — route already super-admin only hai. */
+/* Permanent delete — route already super-admin only hai, isliye kuch return nahi karta. */
 const deleteEligibilityCheck = async (id) => {
   if (!mongoose.isValidObjectId(id)) throw notFound();
 
-  const removed = await EligibilityCheck.findByIdAndDelete(id).lean();
-  if (!removed) throw notFound();
-
-  return toCheckView(removed);
+  if (!(await EligibilityCheck.findByIdAndDelete(id))) throw notFound();
 };
 
 /* Dashboard ke top cards + product-wise breakdown. */

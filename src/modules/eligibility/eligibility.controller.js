@@ -91,13 +91,14 @@ exports.getOne = async (req, res, next) => {
 Delete check (super admin)
 DELETE /api/admin/eligibility-checks/:id
 Permanent hai — deleted row wapas nahi aata aur uska checkNo bhi release nahi
-hota (sequence aage hi badhta hai).
+hota (sequence aage hi badhta hai). Panel delete ke baad list khud refresh
+karta hai, isliye deleted row wapas nahi bhejte.
 */
 exports.remove = async (req, res, next) => {
   try {
-    const check = await service.deleteEligibilityCheck(req.params.id);
+    await service.deleteEligibilityCheck(req.params.id);
 
-    res.json({ success: true, message: "Eligibility check deleted successfully", check });
+    res.json({ success: true, message: "Eligibility check deleted successfully" });
   } catch (error) {
     next(error);
   }
