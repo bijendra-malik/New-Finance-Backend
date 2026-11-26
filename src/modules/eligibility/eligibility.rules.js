@@ -1,218 +1,79 @@
 /*
 ==========================================
-Eligibility calculator rules (website ka /eligibility-calculator page)
+Eligibility rules — product rate card + family dispatch
 
-Website par abhi ye hisaab browser me ho raha tha (income - EMI, fixed 60
-mahine). Yahan wahi calculation server par hoti hai, par product-wise ROI aur
-tenure ke saath — taaki ek hi rule book website, admin panel aur future me
-franchise panel, sabke liye sach ho.
+Rate card wahi 13 products hain jo website ke eligibility/models/core.ts me
+hain. Har product ka apna family engine hai (term, gold, education, project,
+commercial, turnover, wc, lrd, share) — koi bhi number invent nahi hota.
 
-Rate card (ROI p.a. / max tenure):
-
-  PL   12   5Y       BL   14   5Y       HL   8    30Y
-  LAP  10.5 10Y      Project 10.5 5Y    VL   8    5Y
-  EL   6    10Y      CP   12   10Y      WC   12.5 10Y
-  LRD  12.5 10Y      GL   9    1Y       ODCC 10   1Y
-
-Balance Transfer aur Credit Card ka ROI/tenure company-wide fix nahi hai
-(lender ke offer par depend karta hai), isliye unke liye `roi: null` rehta hai —
-calculator sirf eligibility batata hai, amount/EMI "team confirm karegi" kehta
-hai. Koi number invent nahi kiya jaata.
-
-Formula (standard reducing-balance EMI):
-
-  net income   = monthly income - existing EMI
-  max EMI      = net income × FOIR (50%)
-  max loan     = max EMI ka present value, product ROI + tenure par
-  EMI          = max loan par wahi formula (round-trip)
-
-Tenure do cheezon se limit hota hai: product ki max tenure, aur applicant ki
-age (loan 65 saal ki age tak hi chal sakta hai).
+Public flow:
+  GET  /api/eligibility/rate-card  -> PRODUCTS
+  POST /api/eligibility/check      -> calculateEligibility()
 ==========================================
 */
 
-const FOIR_PERCENT = 50;
-const MIN_NET_INCOME = 15000;
-const MIN_AGE = 21;
-const MAX_AGE = 65;
-const MIN_LOAN_AMOUNT = 25000;
-const ROUND_TO = 1000;
+const { PRODUCTS, MIN_LOAN, MIN_GOLD_LOAN, CREDIT_SCORE_FLOOR } = require("./engine/core");
+const { evaluate, formulaFor } = require("./engine");
+const { MIN_SHARE_LOAN } = require("./engine/shares");
+const { legacyCodeFor } = require("./eligibility.input");
 
-/*
-Ek hi rate card — code stable hai (DB me yahi jaata hai), label UI ke liye.
-`aliases` website ke purane labels ("Car Loan") ko map karte hain, taaki
-frontend ko kuch rename karne ki zaroorat na pade.
-*/
-const ELIGIBILITY_PRODUCTS = [
-  { code: "personal_loan", label: "Personal Loan", roi: 12, tenureMonths: 60, aliases: ["pl"] },
-  { code: "business_loan", label: "Business Loan", roi: 14, tenureMonths: 60, aliases: ["bl"] },
-  { code: "home_loan", label: "Home Loan", roi: 8, tenureMonths: 360, aliases: ["hl"] },
-  { code: "loan_against_property", label: "Loan Against Property", roi: 10.5, tenureMonths: 120, aliases: ["lap"] },
-  { code: "project_loan", label: "Project Loan", roi: 10.5, tenureMonths: 60 },
-  { code: "vehicle_loan", label: "Vehicle Loan", roi: 8, tenureMonths: 60, aliases: ["car loan", "vl"] },
-  { code: "education_loan", label: "Education Loan", roi: 6, tenureMonths: 120, aliases: ["el"] },
-  { code: "commercial_purchase", label: "Commercial Purchase", roi: 12, tenureMonths: 120, aliases: ["cp"] },
-  { code: "working_capital", label: "Working Capital", roi: 12.5, tenureMonths: 120, aliases: ["wc"] },
-  { code: "lease_rental_discounting", label: "Lease Rental Discounting", roi: 12.5, tenureMonths: 120, aliases: ["lrd"] },
-  { code: "gold_loan", label: "Gold Loan", roi: 9, tenureMonths: 12, aliases: ["gl"] },
-  { code: "od_cc_limit", label: "OD / CC Limit", roi: 10, tenureMonths: 12, aliases: ["odcc", "od cc limit", "od cc"] },
-  /* Rate on request — calculator amount/EMI nahi banata. */
-  { code: "balance_transfer", label: "Balance Transfer", roi: null, tenureMonths: null, aliases: ["bt"] },
-  { code: "credit_card", label: "Credit Card", roi: null, tenureMonths: null, aliases: ["cc"] },
-];
-
-const normalizeKey = (value) =>
-  String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-/** Product code / label / alias — teeno se ek hi product milta hai. */
-const findProduct = (value) => {
-  const key = normalizeKey(value);
-  if (!key) return null;
-
-  return (
-    ELIGIBILITY_PRODUCTS.find((product) => {
-      if (product.code === key.replace(/ /g, "_")) return true;
-      if (normalizeKey(product.label) === key) return true;
-      return (product.aliases || []).some((alias) => normalizeKey(alias) === key);
-    }) ?? null
-  );
+const REASON_LABELS = {
+  CREDIT_SCORE_MISSING: "Credit score required",
+  CREDIT_SCORE_LOW: `Credit score below ${CREDIT_SCORE_FLOOR}`,
+  INCOME_MISSING: "Income not enough or not declared",
+  NO_EMI_HEADROOM: "Not enough EMI headroom",
+  AGE_TENURE_OVER: "No repayment tenure left before maturity age",
+  TENURE_TOO_SHORT: "Less than a year of tenure left",
+  BELOW_MIN_LOAN: "Limit below this product's minimum loan",
+  GOLD_DETAILS_MISSING: "Gold weight or rate missing",
+  EDU_COST_MISSING: "Course cost missing",
+  TENURE_NONE: "No repayment tenure left",
+  CO_APPLICANT_CAPACITY_LOW: "Co-applicant income supports too little",
+  PROJECT_COST_MISSING: "Project cost missing",
+  CONTRIBUTION_COVERS_COST: "Promoter contribution covers the whole project",
+  PROPERTY_DETAILS_MISSING: "Property value missing",
+  TURNOVER_MISSING: "Projected turnover missing",
+  BALANCE_SHEET_MISSING: "Current assets and liabilities missing",
+  LEASE_DETAILS_MISSING: "Rent, lease or property value missing",
+  SHARE_VALUE_MISSING: "Share value missing",
+  NOT_ELIGIBLE: "Not eligible on the given figures",
 };
 
-/** Public rate card — frontend dropdown + ROI table isi se banata hai. */
+const MIN_LOAN_BY_FAMILY = { gold: MIN_GOLD_LOAN, share: MIN_SHARE_LOAN };
+
+/** Public rate card — frontend dropdown, ROI aur tenure table. */
 const rateCard = () =>
-  ELIGIBILITY_PRODUCTS.map(({ code, label, roi, tenureMonths }) => ({
-    code,
-    label,
-    roi,
-    tenureMonths,
-    rateOnRequest: roi === null,
+  PRODUCTS.map((product) => ({
+    key: product.key,
+    code: legacyCodeFor(product.key),
+    label: product.label,
+    family: product.family,
+    roi: product.roi,
+    tenureMonths: product.maxTenureMonths,
+    maxTenureMonths: product.maxTenureMonths,
+    minLoan: MIN_LOAN_BY_FAMILY[product.family] || MIN_LOAN,
+    minCreditScore: CREDIT_SCORE_FLOOR,
+    secured: !product.unsecured,
+    rateOnRequest: false,
+    formula: formulaFor(product.family),
   }));
 
-/** Pooray saal — DOB se aaj tak. */
-const ageInYears = (dob, now = new Date()) => {
-  let age = now.getFullYear() - dob.getFullYear();
-  const monthDiff = now.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
-  return age;
-};
-
-/** Age 65 tak jitne mahine bache hain (negative => 0). */
-const monthsToAgeCap = (age) => Math.max(0, (MAX_AGE - age) * 12);
-
-const monthlyEmi = (principal, roiPercent, months) => {
-  if (!months) return 0;
-  const monthlyRate = roiPercent / 12 / 100;
-  if (!monthlyRate) return principal / months;
-  const factor = Math.pow(1 + monthlyRate, months);
-  return (principal * monthlyRate * factor) / (factor - 1);
-};
-
-/** Kitna principal aaj ke max EMI se affordable hai (EMI ka present value). */
-const principalFromEmi = (emi, roiPercent, months) => {
-  if (!months) return 0;
-  const monthlyRate = roiPercent / 12 / 100;
-  if (!monthlyRate) return emi * months;
-  const factor = Math.pow(1 + monthlyRate, months);
-  return (emi * (factor - 1)) / (monthlyRate * factor);
-};
-
-const roundDown = (value, step) => Math.floor(value / step) * step;
-
 /**
- * Ek applicant + ek product ka pura hisaab.
- *
- * Input: { product, dateOfBirth, monthlyIncome, existingEmi }
- * Output: eligible, reason, age, netIncome, foirPercent, maxEmi, roi,
- *         tenureMonths, maxLoanAmount, emi — DB aur API dono yahi shape.
+ * Ek product + normalized form inputs -> outcome.
+ * `reasonCode` batata hai kis rule par ruka (eligible par null).
  */
-const calculateEligibility = ({ product, dateOfBirth, monthlyIncome, existingEmi = 0 }) => {
-  const age = ageInYears(dateOfBirth);
-  const income = Math.max(0, Number(monthlyIncome) || 0);
-  const emi = Math.max(0, Number(existingEmi) || 0);
-  const netIncome = Math.max(0, income - emi);
-  const maxEmi = Math.round((netIncome * FOIR_PERCENT) / 100);
-
-  const base = {
-    productCode: product.code,
-    productLabel: product.label,
-    roi: product.roi,
-    tenureMonths: product.tenureMonths,
-    age,
-    monthlyIncome: income,
-    existingEmi: emi,
-    netIncome,
-    foirPercent: FOIR_PERCENT,
-    maxEmi,
-    maxLoanAmount: null,
-    emi: null,
-  };
-
-  const reject = (reason) => ({ ...base, eligible: false, reason, message: reason });
-
-  if (age < MIN_AGE) {
-    return reject(`Age must be at least ${MIN_AGE} years to apply.`);
-  }
-  if (age > MAX_AGE) {
-    return reject(`Age must be ${MAX_AGE} years or below to apply.`);
-  }
-  if (netIncome < MIN_NET_INCOME) {
-    return reject(
-      `Your net monthly income after existing EMIs must be at least ₹${MIN_NET_INCOME.toLocaleString("en-IN")}.`
-    );
-  }
-
-  /* Rate on request wale products: eligibility haan/naa, pricing team batayegi. */
-  if (product.roi === null) {
-    return {
-      ...base,
-      eligible: true,
-      reason: null,
-      message: `${product.label} is available on request — our team will confirm the rate, tenure and amount.`,
-    };
-  }
-
-  /*
-  Tenure: product ki max tenure, par loan applicant ke 65 saal hone se pehle
-  khatam hoga. 6 mahine se kam bacha ho to product practically unavailable hai.
-  */
-  const tenureMonths = Math.min(product.tenureMonths, monthsToAgeCap(age));
-
-  if (tenureMonths < 6) {
-    return reject("The remaining tenure before age 65 is too short for this loan.");
-  }
-
-  const maxLoanAmount = roundDown(
-    principalFromEmi(maxEmi, product.roi, tenureMonths),
-    ROUND_TO
-  );
-
-  if (maxLoanAmount < MIN_LOAN_AMOUNT) {
-    return reject("Your repayment capacity does not support the minimum loan amount for this product.");
-  }
-
-  const computedEmi = Math.round(monthlyEmi(maxLoanAmount, product.roi, tenureMonths));
+const calculateEligibility = ({ product, inputs }) => {
+  const outcome = evaluate(product, inputs);
+  const eligible = Boolean(outcome.eligible);
+  const reasonCode = eligible ? null : outcome.reasonCode || "NOT_ELIGIBLE";
 
   return {
-    ...base,
-    tenureMonths,
-    maxLoanAmount,
-    emi: computedEmi,
-    eligible: true,
-    reason: null,
-    message:
-      `Based on your income and existing obligations, you may be eligible for up to ` +
-      `${maxLoanAmount.toLocaleString("en-IN")} for ${tenureMonths} months at ${product.roi}% p.a. ` +
-      `(approx EMI ₹${computedEmi.toLocaleString("en-IN")}/month).`,
+    outcome,
+    eligible,
+    decision: eligible ? "eligible" : "not_eligible",
+    reasonCode,
+    reasonLabel: reasonCode ? REASON_LABELS[reasonCode] || REASON_LABELS.NOT_ELIGIBLE : null,
   };
 };
 
-module.exports = {
-  ELIGIBILITY_PRODUCTS,
-  findProduct,
-  rateCard,
-  ageInYears,
-  calculateEligibility,
-};
+module.exports = { rateCard, calculateEligibility };
