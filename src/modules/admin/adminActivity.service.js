@@ -107,6 +107,8 @@ const mapUpdate = (product, doc, update) => {
     label: product.label,
     customerName: doc.fullName || "",
     mobile: doc.mobile || "",
+    /* Franchise-scope admin ki feed sirf franchise customers tak rehti hai. */
+    franchiseCustomer: Boolean(doc.franchiseCustomer),
     applicationNo: doc.applicationNo || null,
     loanStatus: doc.status || "Submitted",
     loanAmount: typeof doc.loanAmount === "number" ? doc.loanAmount : null,
@@ -130,7 +132,7 @@ const collectProductUpdates = async (product, since) => {
   if (since) filter["adminUpdates.addedAt"] = { $gte: since };
 
   const docs = await Model.find(filter)
-    .select("fullName mobile applicationNo status loanAmount adminUpdates")
+    .select("fullName mobile applicationNo status loanAmount franchiseCustomer adminUpdates")
     .sort({ "adminUpdates.addedAt": -1 })
     .limit(MAX_DOCS_PER_PRODUCT);
 

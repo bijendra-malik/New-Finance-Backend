@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const { NotificationRead, MAX_KEY_LENGTH } = require("./notification.model");
 const { AdminReview } = require("./adminReview.model");
 const { listActivity } = require("./adminActivity.service");
-const { isSuperAdmin, isSubAdmin, hasPermission } = require("./adminLoanAccess");
+const { isSuperAdmin, isSubAdmin, hasPermission, isFranchiseScope } = require("./adminLoanAccess");
 const Franchise = require("../franchise/franchise.model");
 const { FranchiseNotificationRead } = require("../franchise/franchiseNotification.model");
 const { FRANCHISE_STATUS } = require("../../constants/roles");
@@ -352,19 +352,17 @@ const listNotifications = async (viewer, query = {}) => {
   const items = [];
   const viewerIsSuper = isSuperAdmin(viewer);
 
-  /*
-  Har admin ko kisi bhi admin ka update notification me milta hai — super admin
-  ka status change, regular admin ka note ya recommendation. Scope `listActivity`
-  me product access se filter hota hai, isliye ek admin doosre product ka data
-  nahi dekhta. Apna hi kaam feed me nahi aata (neeche filter); uske liye reviews
-  ka feedback rehta hai.
-
-  Exception: `updates.view` ke bina sub admin ko sirf `kind: "status"` rows
-  milti hain, kyunki notes/recommendations padhna us permission ka kaam hai.
-  Decision lene wale ko phir bhi pata rehna chahiye ki application par kya hua.
-  */
+  
   const subSeesReviewFeed = isSubAdmin(viewer) && hasPermission(viewer, "updates.view");
   const statusOnly = isSubAdmin(viewer) && !subSeesReviewFeed;
+  /*
+  Franchise-scope admin (Franchises module, Customers nahi) franchise customers
+  par kaam karta hai. Uski feed me sirf sub admin / super admin ke messages
+  aate hain — doosre normal admins ke notes uska kaam nahi hain — aur rows sirf
+  franchise customer applications ke hote hain, direct customer ke nahi.
+  */
+  const franchiseScopedViewer =
+    isFranchiseScope(viewer) && !viewerIsSuper && !isSubAdmin(viewer);
 
   if (viewer?.id) {
     const activity = await listActivity({ days, limit: MAX_SCAN }, viewer);
@@ -374,6 +372,11 @@ const listNotifications = async (viewer, query = {}) => {
       // Apna hi kaam notification nahi banta.
       if (viewerId && row.adminId && row.adminId === viewerId) return;
       if (statusOnly && row.kind !== "status") return;
+      if (franchiseScopedViewer) {
+        const fromSupervisor = /sub|super/i.test(row.adminRole || "");
+        const aboutFranchiseCustomer = row.entity === "franchise" || row.franchiseCustomer === true;
+        if (!fromSupervisor || !aboutFranchiseCustomer) return;
+      }
       const item = buildUpdateNotification(row);
       /*
       Super admin ke liye escalated aur status change high hain — baaki
