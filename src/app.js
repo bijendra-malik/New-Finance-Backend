@@ -99,10 +99,10 @@ nahi. Details: docs/CAPTCHA-API.md
 app.use("/api/captcha", require("./modules/captcha/captcha.routes"));
 
 /*
-Loan eligibility calculator (public). Website ka /eligibility-calculator page
-POST /api/eligibility/check se result leta hai; har check DB me save hota hai
-aur super admin /api/admin/eligibility-checks se dekhta hai.
-Details: docs/ELIGIBILITY-API.md
+Loan eligibility calculator (public). Website ke /eligibility-calculator pages
+POST /api/eligibility/check ya product-scoped /api/eligibility/calculator/:slug
+se result lete hain; har check DB me save hota hai aur super admin
+/api/admin/eligibility-checks se dekhta hai.
 */
 app.use("/api/eligibility", require("./modules/eligibility/eligibility.routes"));
 

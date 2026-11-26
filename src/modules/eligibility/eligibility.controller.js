@@ -4,7 +4,9 @@ const service = require("./eligibility.service");
 ==========================================
 Eligibility controllers
 
-Public : GET /api/eligibility/rate-card, POST /api/eligibility/check
+Public : GET /api/eligibility/rate-card
+         POST /api/eligibility/check
+         POST /api/eligibility/calculator/:slug
 Admin  : /api/admin/eligibility-checks (list, stats)
 ==========================================
 */
@@ -19,28 +21,44 @@ exports.rateCard = async (req, res, next) => {
 };
 
 /*
-Check eligibility (public)
-POST /api/eligibility/check
-{
-  name, mobile, email?, dob: "DD/MM/YYYY" (ya dobDD/dobMM/dobYYYY),
-  country, occupation, product, monthlyIncome, existingEmi?
-}
+Ek hi check pipeline: /check product body se leta hai, /calculator/:slug path se.
+Handler 3-arg hi rehta hai — express 4-arg function ko error middleware samajhta hai.
 */
-exports.check = async (req, res, next) => {
+const checkFor = (productKey) => async (req, res, next) => {
   try {
-    const { check, duplicate } = await service.createEligibilityCheck(req.body);
+    const { check, duplicate } = await service.createEligibilityCheck(req.body, productKey);
 
-    res.status(duplicate ? 200 : 201).json({
-      success: true,
-      duplicate,
-      checkNo: check.checkNo,
-      checkedAt: check.checkedAt,
-      result: check,
-    });
+    /*
+    Response sirf check row hai — koi wrapper, product block, outcome snapshot
+    ya duplicate headline/caps nahi. Jo field response me chahiye wo toCheckView
+    me add karo, yahan nahi. Naya check 201, duplicate 200.
+    */
+    res.status(duplicate ? 200 : 201).json(check);
   } catch (error) {
+    if (error.statusCode === 400 && error.errors) {
+      return res.status(400).json({
+        success: false,
+        code: "VALIDATION_ERROR",
+        message: error.message,
+        errors: error.errors,
+      });
+    }
     next(error);
   }
 };
+
+/*
+Check eligibility (public) — POST /api/eligibility/check
+Body website ke form jaisi flat hai — product key ("personal"), dob,
+monthlyIncome, creditScore, existingEmi, aur product-specific fields.
+*/
+exports.check = checkFor();
+
+/*
+Product-scoped check — POST /api/eligibility/calculator/personal-loan
+Body wahi flat form body; product path se aata hai, body ka product ignore hota hai.
+*/
+exports.checkProduct = checkFor;
 
 /*
 List checks (super admin)
