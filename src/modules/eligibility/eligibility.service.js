@@ -1,198 +1,107 @@
+const crypto = require("crypto");
+
 const { EligibilityCheck } = require("./eligibility.model");
-const {
-  ELIGIBILITY_PRODUCTS,
-  findProduct,
-  rateCard,
-  calculateEligibility,
-  ageInYears,
-} = require("./eligibility.rules");
+const { rateCard, calculateEligibility } = require("./eligibility.rules");
+const { normalizeInput, resolveProduct, legacyCodeFor, text } = require("./eligibility.input");
+const { FOIR_CAP } = require("./engine/core");
 const { nextEligibilityCheckNo } = require("../../utils/sequence");
 
 /*
 ==========================================
 Eligibility service
 
-Public website POST /api/eligibility/check yahan aata hai: input validate hota
-hai, rules se calculation hoti hai, record save hota hai aur wahi result
-wapas jaata hai. Admin panel isi collection ko list/stats se padhta hai.
+Public POST /api/eligibility/check (ya /calculator/:slug):
+  flat form body -> validate -> family engine -> snapshot save -> response.
+
+Admin panel isi collection ko list/stats se padhta hai; purane flat fields
+(product, maxLoanAmount, emi, reason...) waise hi rehte hain taaki panel ko
+badalna na pade.
 ==========================================
 */
 
-const badRequest = (message) => {
-  const error = new Error(message);
-  error.statusCode = 400;
-  return error;
-};
-
-const text = (value) => {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return "";
-};
-
-const toNumber = (value) => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  const cleaned = text(value).replace(/[,₹\s]/g, "");
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : NaN;
-};
-
 const MAX_PAGE_SIZE = 100;
 const DUPLICATE_WINDOW_MS = 60 * 1000;
+const MAX_MESSAGE = 1200;
 
-/* "YYYY-MM-DD", "DD/MM/YYYY", "DD-MM-YYYY" aur alag DD/MM/YYYY fields. */
-const parseDateOfBirth = (body = {}) => {
-  const raw = text(body.dateOfBirth ?? body.dob ?? body.dobDate);
-  const dd = text(body.dobDD ?? body.dobDay);
-  const mm = text(body.dobMM ?? body.dobMonth);
-  const yyyy = text(body.dobYYYY ?? body.dobYear);
-
-  let parts = null;
-  if (dd && mm && yyyy) {
-    parts = [dd, mm, yyyy];
-  } else if (raw) {
-    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (iso) parts = [iso[3], iso[2], iso[1]];
-    else {
-      const dmy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-      if (dmy) parts = [dmy[1], dmy[2], dmy[3]];
-    }
-  }
-
-  if (!parts) return null;
-
-  const day = Number(parts[0]);
-  const month = Number(parts[1]);
-  const year = Number(parts[2]);
-
-  if (!day || !month || !year) return null;
-
-  const date = new Date(Date.UTC(year, month - 1, day));
-  /* 31 Feb jaisi invalid date roll over ho jaati hai — usse reject karo. */
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) {
-    return null;
-  }
-
-  return date;
+const clampText = (value, max) => {
+  const trimmed = text(value);
+  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
 };
 
-const validateInput = (body = {}) => {
-  const name = text(body.name ?? body.fullName);
-  const mobile = text(body.mobile ?? body.mobileNumber ?? body.phone);
-  const email = text(body.email ?? body.emailAddress).toLowerCase();
-  const country = text(body.country);
-  const occupation = text(body.occupation);
-  const productInput = body.product ?? body.productCode ?? body.loanProduct;
-  const product = findProduct(productInput);
-
-  const monthlyIncome = toNumber(body.monthlyIncome ?? body.income);
-  const existingEmiRaw = body.existingEmi ?? body.emi ?? 0;
-  const existingEmi = toNumber(existingEmiRaw === "" ? 0 : existingEmiRaw);
-
-  const dateOfBirth = parseDateOfBirth(body);
-
-  const errors = [];
-
-  if (name.length < 2) errors.push("Full name is required");
-  else if (name.length > 120) errors.push("Full name is too long (max 120 characters)");
-
-  const digits = mobile.replace(/\D/g, "");
-  if (digits.length < 10 || digits.length > 15) {
-    errors.push("A valid mobile number is required");
-  }
-
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-    errors.push("Enter a valid email address");
-  }
-
-  if (!dateOfBirth) errors.push("A valid date of birth is required (DD/MM/YYYY)");
-
-  if (!text(productInput)) errors.push("Select a loan product");
-  else if (!product) {
-    errors.push(
-      `Unknown loan product. Supported: ${ELIGIBILITY_PRODUCTS.map((p) => p.label).join(", ")}`
-    );
-  }
-
-  if (!Number.isFinite(monthlyIncome) || monthlyIncome <= 0) {
-    errors.push("A valid monthly income is required");
-  }
-
-  if (!Number.isFinite(existingEmi) || existingEmi < 0) {
-    errors.push("Existing EMI must be zero or more");
-  }
-
-  let age = null;
-  if (dateOfBirth) {
-    age = ageInYears(dateOfBirth);
-    if (age > 120) errors.push("Date of birth looks invalid");
-    else if (dateOfBirth.getTime() > Date.now()) errors.push("Date of birth cannot be in the future");
-  }
-
-  if (errors.length) throw badRequest(errors.join(", "));
-
-  return {
-    name,
-    mobile,
-    email,
-    dateOfBirth,
-    country,
-    occupation,
-    product,
-    monthlyIncome,
-    existingEmi,
-  };
-};
-
-/* Ek hi response shape — public result aur admin list. */
+/* Ek hi flat view — public response aur admin list dono isi shape par chalte hain. */
 const toCheckView = (doc) => {
-  const item = typeof doc?.toObject === "function" ? doc.toObject() : { ...doc };
+  const item = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+  const outcome = item.outcome || {};
+  const caps = Array.isArray(item.caps)
+    ? item.caps.map((cap) => ({ key: cap.key || "", label: cap.label || "", value: cap.value || 0 }))
+    : [];
 
   return {
-    id: String(item._id ?? item.id ?? ""),
-    checkNo: item.checkNo ?? null,
-    name: item.name ?? "",
-    mobile: item.mobile ?? "",
-    email: item.email ?? "",
-    dateOfBirth: item.dateOfBirth ?? null,
-    age: item.age ?? null,
-    country: item.country ?? "",
-    occupation: item.occupation ?? "",
-    product: item.productCode ?? "",
-    productLabel: item.productLabel ?? "",
-    monthlyIncome: item.monthlyIncome ?? 0,
-    existingEmi: item.existingEmi ?? 0,
-    netIncome: item.netIncome ?? 0,
-    foirPercent: item.foirPercent ?? null,
-    maxEmi: item.maxEmi ?? 0,
-    roi: item.roi ?? null,
-    tenureMonths: item.tenureMonths ?? null,
-    maxLoanAmount: item.maxLoanAmount ?? null,
-    emi: item.emi ?? null,
+    id: String(item._id || item.id || ""),
+    checkNo: item.checkNo || null,
+    name: item.name || "",
+    mobile: item.mobile || "",
+    email: item.email || "",
+    dateOfBirth: item.dateOfBirth || null,
+    age: item.age !== undefined && item.age !== null ? item.age : null,
+    country: item.country || "",
+    occupation: item.occupation || "",
+
+    product: item.productCode || "",
+    productKey: item.productKey || "",
+    productLabel: item.productLabel || "",
+    family: item.family || "",
+
+    monthlyIncome: item.monthlyIncome || 0,
+    existingEmi: item.existingEmi || 0,
+    creditScore: item.creditScore || 0,
+    netIncome: item.netIncome || 0,
+    foirPercent: item.foirPercent !== undefined && item.foirPercent !== null ? item.foirPercent : null,
+    maxEmi: item.maxEmi || 0,
+
+    roi: item.roi !== undefined && item.roi !== null ? item.roi : null,
+    tenureMonths: item.tenureMonths !== undefined && item.tenureMonths !== null ? item.tenureMonths : null,
+    maxLoanAmount: item.maxLoanAmount !== undefined && item.maxLoanAmount !== null ? item.maxLoanAmount : null,
+    emi: item.emi !== undefined && item.emi !== null ? item.emi : null,
+    headline: item.headline || 0,
+    headlineLabel: outcome.headlineLabel || "",
+    monthly: outcome.monthly || 0,
+    monthlyLabel: outcome.monthlyLabel || "",
+    binding: item.binding || null,
+    caps,
+
     eligible: Boolean(item.eligible),
-    reason: item.reason ?? null,
-    source: item.source ?? "",
-    checkedAt: item.createdAt ?? null,
+    decision: item.eligible ? "eligible" : "not_eligible",
+    reason: item.reason || null,
+    reasonCode: item.reasonCode || null,
+    message: item.message || "",
+    suggestions: Array.isArray(outcome.suggestions) ? outcome.suggestions : [],
+
+    source: item.source || "",
+    checkedAt: item.createdAt || null,
   };
 };
 
 /**
  * Naya check: validate -> calculate -> save.
- * Same mobile + product + income 1 minute me dobara aaye to naya row nahi
- * banta (double click / retry), wahi result wapas milta hai.
+ * Same applicant + same product + same inputs 1 minute me dobara aaye to naya
+ * row nahi banta (double click / retry), wahi result wapas milta hai.
  */
-const createEligibilityCheck = async (body = {}) => {
-  const input = validateInput(body);
-  const result = calculateEligibility(input);
+const createEligibilityCheck = async (body = {}, productKey) => {
+  const input = normalizeInput(body, productKey);
+
+  const { outcome, eligible, reasonCode, reasonLabel } = calculateEligibility({
+    product: input.product,
+    inputs: input.inputs,
+  });
+
+  const inputHash = crypto
+    .createHash("sha1")
+    .update(JSON.stringify({ mobile: input.applicant.mobile, product: input.product.key, inputs: input.inputs }))
+    .digest("hex");
 
   const duplicate = await EligibilityCheck.findOne({
-    mobile: input.mobile,
-    productCode: result.productCode,
-    monthlyIncome: input.monthlyIncome,
+    inputHash,
     createdAt: { $gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
   })
     .sort({ createdAt: -1 })
@@ -202,28 +111,49 @@ const createEligibilityCheck = async (body = {}) => {
     return { check: toCheckView(duplicate), duplicate: true };
   }
 
+  const foirCap = outcome.credit ? outcome.credit.foirCap : null;
+  const monthlyCap = outcome.foir ? Math.round(outcome.foir.income * (foirCap || FOIR_CAP)) : 0;
+
   const created = await EligibilityCheck.create({
     checkNo: await nextEligibilityCheckNo(),
-    name: input.name,
-    mobile: input.mobile,
-    email: input.email,
-    dateOfBirth: input.dateOfBirth,
-    age: result.age,
-    country: input.country,
-    occupation: input.occupation,
-    productCode: result.productCode,
-    productLabel: result.productLabel,
-    monthlyIncome: result.monthlyIncome,
-    existingEmi: result.existingEmi,
-    netIncome: result.netIncome,
-    foirPercent: result.foirPercent,
-    maxEmi: result.maxEmi,
-    roi: result.roi,
-    tenureMonths: result.tenureMonths,
-    maxLoanAmount: result.maxLoanAmount,
-    emi: result.emi,
-    eligible: result.eligible,
-    reason: result.reason,
+
+    name: input.applicant.fullName,
+    mobile: input.applicant.mobile,
+    email: input.applicant.email,
+    dateOfBirth: input.applicant.dateOfBirth,
+    age: input.applicant.age,
+    country: input.applicant.country,
+    occupation: input.inputs.occupation,
+
+    productCode: input.legacyCode,
+    productKey: input.product.key,
+    productLabel: input.product.label,
+    family: input.product.family,
+
+    monthlyIncome: input.inputs.monthlyIncome,
+    existingEmi: input.inputs.existingEmi,
+    creditScore: input.inputs.creditScore,
+
+    netIncome: Math.max(0, input.inputs.monthlyIncome - input.inputs.existingEmi),
+    foirPercent: foirCap ? Math.round(foirCap * 1000) / 10 : null,
+    maxEmi: monthlyCap,
+    roi: outcome.roi || input.product.roi,
+    tenureMonths: outcome.months || null,
+    maxLoanAmount: eligible ? outcome.headline : null,
+    emi: eligible ? outcome.monthly : null,
+    headline: outcome.headline || 0,
+
+    eligible,
+    reason: eligible ? null : reasonLabel,
+    reasonCode,
+    message: clampText(outcome.message, MAX_MESSAGE),
+    binding: outcome.binding || null,
+    caps: outcome.caps || [],
+
+    inputs: input.inputs,
+    outcome,
+    inputHash,
+
     source: text(body.source) || "website-eligibility-calculator",
   });
 
@@ -250,8 +180,8 @@ const buildFilter = ({ search, product, eligible, from, to } = {}) => {
 
   const wantedProduct = text(product);
   if (wantedProduct && wantedProduct.toLowerCase() !== "all") {
-    const match = findProduct(wantedProduct);
-    filter.productCode = match ? match.code : wantedProduct;
+    const match = resolveProduct(wantedProduct);
+    filter.productCode = match ? legacyCodeFor(match.key) : wantedProduct;
   }
 
   const wantedEligible = normalizeEligibleFilter(eligible);
