@@ -352,7 +352,27 @@ const listFranchiseLoans = async (id) => {
   };
 };
 
+/*
+Super admin hi franchise account permanently hata sakta hai. Franchise doc ke
+saath uska notification read state bhi jaata hai, warna orphan receipts bach
+ti hain. Franchise ke customers aur unki loan applications financial record
+hain — unhe yahan delete nahi kiya jaata.
+*/
+const deleteFranchise = async (id) => {
+  const franchise = await getFranchiseById(id);
+
+  await FranchiseNotificationRead.deleteMany({ franchiseId: franchise._id });
+  await franchise.deleteOne();
+
+  return {
+    _id: franchise._id,
+    name: franchise.name || "",
+    franchiseId: franchise.franchiseId || "",
+  };
+};
+
 module.exports = {
+  deleteFranchise,
   listFranchises,
   countFranchises,
   getFranchiseById,

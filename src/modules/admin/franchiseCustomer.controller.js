@@ -63,3 +63,17 @@ exports.getOne = async (req, res, next) => {
     next(error);
   }
 };
+
+/*
+Delete a franchise customer + their CIBIL audit trail (super admin only)
+DELETE /api/admin/franchise-customers/:id
+*/
+exports.remove = async (req, res, next) => {
+  try {
+    const deleted = await service.deleteFranchiseCustomer(req.params.id);
+
+    res.json({ success: true, message: "Franchise customer deleted", customer: deleted });
+  } catch (error) {
+    next(error);
+  }
+};

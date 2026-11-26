@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const FranchiseCustomer = require("../franchise/franchiseCustomer.model");
+const FranchiseCustomerLoanDraft = require("../franchise/franchiseCustomerLoanDraft.model");
 const Franchise = require("../franchise/franchise.model");
 const { MODELS } = require("../loans/shared/loanModels");
 const { RESOURCE_ROUTES } = require("../loans/shared/adminStatus.service");
@@ -202,6 +203,32 @@ const getFranchiseCustomer = async (id) => {
   };
 };
 
+/* ------------------------------------------------------------- delete -- */
+
+/*
+Super admin hi customer delete kar sakta hai (route middleware guard).
+
+Customer ka CIBIL audit trail usi document par rehta hai, is liye document
+delete hone se wo bhi hat jaata hai. Customer ka adhoora loan draft (product
+apply ke beech bana temporary record) bhi saath jaata hai. Uske filed loans
+financial records hain — unhe chhua nahi jaata.
+*/
+const deleteFranchiseCustomer = async (id) => {
+  if (!mongoose.isValidObjectId(id)) throw notFound("Franchise customer not found");
+
+  const customer = await FranchiseCustomer.findById(id);
+  if (!customer) throw notFound("Franchise customer not found");
+
+  await FranchiseCustomerLoanDraft.deleteMany({ franchiseCustomer: customer._id });
+  await customer.deleteOne();
+
+  return {
+    _id: customer._id,
+    fullName: customer.fullName || "",
+    mobile: customer.mobile || "",
+  };
+};
+
 /* -------------------------------------------------------------- stats -- */
 
 /*
@@ -282,5 +309,6 @@ module.exports = {
   listFranchiseCustomers,
   countFranchiseCustomers,
   getFranchiseCustomer,
+  deleteFranchiseCustomer,
   franchiseCustomerStats,
 };

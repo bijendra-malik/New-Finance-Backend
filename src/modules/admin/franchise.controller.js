@@ -199,3 +199,20 @@ exports.loans = async (req, res, next) => {
     next(error);
   }
 };
+
+/*
+Delete a franchise permanently
+DELETE /api/admin/franchises/:id      (super admin only — route guard)
+*/
+exports.remove = async (req, res, next) => {
+  try {
+    const franchise = await franchiseService.deleteFranchise(req.params.id);
+    res.json({
+      success: true,
+      message: `Franchise ${franchise.name || franchise.franchiseId} deleted`,
+      franchise,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

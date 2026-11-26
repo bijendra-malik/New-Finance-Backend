@@ -1,6 +1,7 @@
 const router = require("express").Router();
 
 const franchiseController = require("./franchise.controller");
+const requireSuperAdmin = require("../../middleware/requireSuperAdmin.middleware");
 /*
 ==========================================
 Admin franchise routes — mounted at /api/admin/franchises
@@ -13,6 +14,7 @@ Admin franchise routes — mounted at /api/admin/franchises
   PATCH  /:id/status       any status             { status, note? }
   PATCH  /:id/reset-password  re-hash the password from the PAN number
   GET    /:id/loans        loans submitted through this FRN
+  DELETE /:id              permanently delete the account (super admin only)
 
 Franchise module access hi guard hai (parent router lagaata hai): jise module
 mila hai wo approve/reject/reset bhi kar sakta hai, chahe regular admin ho ya
@@ -29,5 +31,8 @@ router.patch("/:id/reset-password", franchiseController.resetPassword);
 router.get("/:id/loans", franchiseController.loans);
 /* Regular admin likhta hai; super admin ko yahan 403 milta hai. */
 router.post("/:id/updates", franchiseController.addUpdate);
+
+/* Permanent delete — regular/sub admin ko yahan 403 milta hai. */
+router.delete("/:id", requireSuperAdmin, franchiseController.remove);
 
 module.exports = router;
