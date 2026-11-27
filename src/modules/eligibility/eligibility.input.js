@@ -69,9 +69,7 @@ const FORM_DEFAULTS = {
   lapPropertyType: "Residential",
   lapCity: "A",
   lapUsage: "Self-occupied",
-  vehicleFoir: 50,
   vehicleLtv: 90,
-  commercialFoir: 70,
   commercialLtv: 70,
   projectDscr: 1.25,
   wcAssessment: 18.75,
@@ -227,7 +225,6 @@ const normalizeInput = (body = {}, productKey) => {
     lrdDeduction: withDefault(body, "lrdDeduction"),
     lrdCoverage: withDefault(body, "lrdCoverage"),
     vehicleDownPayment: num(body.vehicleDownPayment),
-    vehicleFoir: withDefault(body, "vehicleFoir"),
     vehicleLtv: withDefault(body, "vehicleLtv"),
     eduFees: num(body.eduFees),
     eduHostel: num(body.eduHostel),
@@ -240,7 +237,6 @@ const normalizeInput = (body = {}, productKey) => {
     projectDscr: withDefault(body, "projectDscr"),
     commercialRent: num(body.commercialRent),
     commercialCoApplicant: num(body.commercialCoApplicant),
-    commercialFoir: withDefault(body, "commercialFoir"),
     commercialLtv: withDefault(body, "commercialLtv"),
     wcAssessment: withDefault(body, "wcAssessment"),
     wcMargin: num(body.wcMargin),
@@ -358,7 +354,7 @@ const normalizeInput = (body = {}, productKey) => {
   if (Object.keys(errors).length > 0) throw badRequest(errors);
 
   return {
-    applicant: { fullName, mobile, email, dateOfBirth, age, country: text(body.country) },
+    applicant: { fullName, mobile, email, dateOfBirth, age },
     product,
     legacyCode: legacyCodeFor(product.key),
     inputs,
