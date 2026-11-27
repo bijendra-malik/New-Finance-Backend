@@ -13,8 +13,7 @@ NO_EMI_HEADROOM, BELOW_MIN_LOAN...).
 */
 
 const FOIR_CAP = 0.7;
-const EDUCATION_FOIR_CAP = 0.7;
-const VEHICLE_FOIR = 0.5;
+const EDUCATION_FOIR_CAP = FOIR_CAP;
 const VEHICLE_LTV = 0.9;
 const MIN_HEADROOM = 500;
 const MIN_LOAN = 50000;
@@ -180,9 +179,9 @@ const CREDIT_SCORE_FLOOR = 650;
 
 const creditPolicyFor = (score) => {
   if (!Number.isFinite(score) || score <= 0) return null;
-  if (score >= 750) return { band: "750 and above, excellent", foirCap: 0.65, securedFoirCap: 0.7, eligible: true };
-  if (score >= 700) return { band: "700 to 749, good", foirCap: 0.55, securedFoirCap: 0.65, eligible: true };
-  if (score >= CREDIT_SCORE_FLOOR) return { band: "650 to 699, fair", foirCap: 0.45, securedFoirCap: 0.6, eligible: true };
+  if (score >= 750) return { band: "750 and above, excellent", foirCap: FOIR_CAP, securedFoirCap: FOIR_CAP, eligible: true };
+  if (score >= 700) return { band: "700 to 749, good", foirCap: FOIR_CAP, securedFoirCap: FOIR_CAP, eligible: true };
+  if (score >= CREDIT_SCORE_FLOOR) return { band: "650 to 699, fair", foirCap: FOIR_CAP, securedFoirCap: FOIR_CAP, eligible: true };
   return { band: `under ${CREDIT_SCORE_FLOOR}`, foirCap: 0, securedFoirCap: 0, eligible: false };
 };
 
@@ -192,7 +191,7 @@ const creditRefusal = (score, headlineLabel) => {
     return holding(
       headlineLabel,
       "Add your credit bureau score and we will estimate the loan you can service.",
-      ["A score of 750 or above usually gets the widest repayment room and the best rate."],
+      ["This calculator requires a score of 650 or above."],
       "CREDIT_SCORE_MISSING",
     );
   }
@@ -213,7 +212,6 @@ const creditRefusal = (score, headlineLabel) => {
 module.exports = {
   FOIR_CAP,
   EDUCATION_FOIR_CAP,
-  VEHICLE_FOIR,
   VEHICLE_LTV,
   MIN_HEADROOM,
   MIN_LOAN,
