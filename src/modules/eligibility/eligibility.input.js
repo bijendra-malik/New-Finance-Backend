@@ -63,14 +63,12 @@ const MONTHLY_INCOME_LABEL = "Monthly income";
 const YEARLY_INCOME_LABEL = "Yearly income";
 
 /*
-Website "Self-Employed" / "Business Owner" bhejti hai, jabki loan applications
-"Self Employed - Business" / "Self Employed - Professional" bhejte hain — dono
-yearly income wale hain. Spelling/case par nahi tikna.
+Applications me occupation/employment type sirf teen values hain: "Salaried",
+"Self Employed - Business", "Self Employed - Professional". Website bhi yahi
+bhejti hai; dono self-employed types se yearly income li jaati hai.
 */
-const takesYearlyIncome = (occupation) => {
-  const label = normalizeLabel(occupation);
-  return label.includes("self employed") || label.includes("business owner");
-};
+const YEARLY_OCCUPATIONS = ["self employed business", "self employed professional"];
+const takesYearlyIncome = (occupation) => YEARLY_OCCUPATIONS.includes(normalizeLabel(occupation));
 
 /* INITIAL_FORM ke wahi defaults jo calculation me use hote hain. */
 const FORM_DEFAULTS = {
@@ -200,7 +198,7 @@ const normalizeInput = (body = {}, productKey) => {
     product && product.key === "personal"
       ? "Salaried"
       : product && product.key === "business" && (occupationRaw === "Salaried" || !occupationRaw)
-        ? "Self-Employed"
+        ? "Self Employed - Business"
         : occupationRaw || "Salaried";
 
   const dateOfBirth = parseDateOfBirth(body);
