@@ -34,12 +34,14 @@ const sendEmail = async ({ to, subject, html, text }) => {
     const t = getTransporter();
 
     if (!t) {
-      console.log("====================================");
-      console.log("📧 Sending Email (SMTP not configured — logging instead)...");
-      console.log("To      :", to);
-      console.log("Subject :", subject);
-      console.log("Body    :", text || html);
-      console.log("====================================");
+      if (process.env.NODE_ENV !== "production") {
+        console.log("====================================");
+        console.log("📧 Sending Email (SMTP not configured — logging instead)...");
+        console.log("To      :", to);
+        console.log("Subject :", subject);
+        console.log("Body    :", text || html);
+        console.log("====================================");
+      }
       return true;
     }
 
