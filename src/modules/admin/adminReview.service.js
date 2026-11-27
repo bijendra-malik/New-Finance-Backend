@@ -246,7 +246,7 @@ const saveReview = async (admin, body = {}) => {
         reviewedAt: new Date(),
       },
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true, runValidators: true }
   );
 
   return toPublic(record);
