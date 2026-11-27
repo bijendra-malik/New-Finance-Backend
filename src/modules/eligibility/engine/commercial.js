@@ -29,7 +29,7 @@ const commercialEligibility = (input) => {
   const income = Math.max(0, input.monthlyIncome) + coApplicant;
   const existing = Math.max(0, input.existingEmi);
   const ltv = Math.min(0.9, Math.max(0.3, (input.ltvPct !== undefined ? input.ltvPct : COMMERCIAL_LTV * 100) / 100));
-  const foirCap = Math.min(0.9, Math.max(0.2, (input.foirPct !== undefined ? input.foirPct : FOIR_CAP * 100) / 100));
+  const foirCap = FOIR_CAP;
   const caps = [];
 
   if (propertyValue > 0) {
