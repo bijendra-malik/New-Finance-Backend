@@ -132,7 +132,7 @@ const createCustomerLoanDraft = async (customerId, body = {}, account = null) =>
         expiresAt: new Date(Date.now() + LOAN_DRAFT_RETENTION_MS),
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    { returnDocument: "after", upsert: true, setDefaultsOnInsert: true }
   );
 
   return {
