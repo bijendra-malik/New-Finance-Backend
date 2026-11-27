@@ -132,9 +132,80 @@ describe("shared 70% FOIR policy", () => {
   });
 });
 
+describe("business loan yearly income", () => {
+  it("takes the yearly income and divides it by 12 for FOIR", () => {
+    const yearly = run(personalBody({ product: "business", annualIncome: 900000, monthlyIncome: "" }));
+    const monthly = run(personalBody({ product: "business", monthlyIncome: 75000 }));
+
+    expect(yearly.input.inputs.monthlyIncome).toBe(75000);
+    expect(yearly.input.inputs.annualIncome).toBe(900000);
+    expect(yearly.outcome.headline).toBe(monthly.outcome.headline);
+    expect(yearly.outcome.foir.income).toBe(75000);
+    expect(yearly.outcome.months).toBe(60);
+  });
+
+  it("records the yearly figure when an old monthly value is sent", () => {
+    const { input } = run(personalBody({ product: "business", monthlyIncome: 75000 }));
+    expect(input.inputs.monthlyIncome).toBe(75000);
+    expect(input.inputs.annualIncome).toBe(900000);
+  });
+
+  it("asks for the yearly income when the business income is missing", () => {
+    let error;
+    try {
+      normalizeInput(personalBody({ product: "business", monthlyIncome: "" }));
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error.errors).toEqual({ annualIncome: "Enter your yearly income" });
+  });
+});
+
+describe("self-employed yearly income", () => {
+    /* Application ke dono self-employed employment types yearly income wale hain. */
+  it.each(["Self Employed - Business", "Self Employed - Professional"])("takes the yearly income for a home loan when the occupation is %s",
+    (occupation) => {
+      const yearly = run(
+        personalBody({ product: "home", occupation, propertyValue: 5000000, annualIncome: 900000, monthlyIncome: "" }),
+      );
+      const monthly = run(
+        personalBody({ product: "home", occupation, propertyValue: 5000000, monthlyIncome: 75000 }),
+      );
+
+      expect(yearly.input.inputs.monthlyIncome).toBe(75000);
+      expect(yearly.input.inputs.annualIncome).toBe(900000);
+      expect(yearly.outcome.headline).toBe(monthly.outcome.headline);
+    },
+  );
+
+  it("keeps a salaried home loan applicant on monthly income", () => {
+    const { input } = run(personalBody({ product: "home", occupation: "Salaried", propertyValue: 5000000 }));
+
+    expect(input.inputs.monthlyIncome).toBe(80000);
+    expect(input.inputs.annualIncome).toBe(0);
+  });
+
+  it.each(["Self Employed - Business", "Self Employed - Professional"])(
+    "asks for the yearly income when a %s applicant leaves it blank",
+    (occupation) => {
+      let error;
+      try {
+        normalizeInput(
+          personalBody({ product: "home", occupation, propertyValue: 5000000, monthlyIncome: "" }),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error.errors).toEqual({ annualIncome: "Enter your yearly income" });
+    },
+  );
+});
+
 describe("input normalization", () => {
   it("treats the statutory personal-loan occupation as salaried", () => {
-    const { input } = run(personalBody({ occupation: "Business Owner" }));
+    const { input } = run(personalBody({ occupation: "Self Employed - Business" }));
     expect(input.inputs.occupation).toBe("Salaried");
   });
 
