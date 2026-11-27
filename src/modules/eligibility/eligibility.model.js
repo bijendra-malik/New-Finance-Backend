@@ -46,6 +46,8 @@ const eligibilityCheckSchema = new mongoose.Schema(
 
     /* Applicant ka input. */
     monthlyIncome: { type: Number, required: true, min: 0 },
+    /* Business loan: saal ki income (yearly) jisse monthly income banti hai. */
+    annualIncome: { type: Number, default: 0, min: 0 },
     existingEmi: { type: Number, default: 0, min: 0 },
     creditScore: { type: Number, default: 0, min: 0, max: 900 },
 
