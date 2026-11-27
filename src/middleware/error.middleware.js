@@ -1,6 +1,11 @@
-module.exports = (err, req, res, next) => {
+const logger = require("../utils/logger");
 
-    console.log(err);
+module.exports = (err, req, res, next) => {
+    if (err.statusCode && err.statusCode < 500) {
+        logger.warn(err.message || "Request rejected");
+    } else {
+        logger.error(err.message || "Internal Server Error", err);
+    }
 
     let statusCode = err.statusCode || 500;
     let message = err.message || "Internal Server Error";
