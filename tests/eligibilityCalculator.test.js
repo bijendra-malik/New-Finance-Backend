@@ -22,6 +22,13 @@ const personalBody = (overrides = {}) => ({
   ...overrides,
 });
 
+const businessBody = (overrides = {}) => ({
+  ...personalBody(),
+  product: "business",
+  occupation: "Self Employed - Business",
+  ...overrides,
+});
+
 const run = (body) => {
   const input = normalizeInput(body);
   const result = calculateEligibility({ product: input.product, inputs: input.inputs });
@@ -32,17 +39,29 @@ describe("personal loan eligibility (website parity)", () => {
   it("sanctions the FOIR cap over the product tenure", () => {
     const { outcome } = run(personalBody());
 
-    /* Score 760 => 65% FOIR; ₹80,000 × 65% = ₹52,000 EMI room. */
+    /* Personal loans use 70% FOIR; ₹80,000 × 70% = ₹56,000 EMI room. */
     expect(outcome.eligible).toBe(true);
     expect(outcome.roi).toBe(12);
     expect(outcome.months).toBe(60);
-    expect(outcome.headline).toBe(2337000);
-    expect(outcome.monthly).toBe(51985);
-    expect(outcome.caps).toEqual([{ key: "foir", label: "Repayment capacity", value: 2337000 }]);
+    expect(outcome.headline).toBe(2517482);
+    expect(outcome.monthly).toBe(56000);
+    expect(outcome.caps).toEqual([{ key: "foir", label: "Repayment capacity", value: 2517482 }]);
     expect(outcome.binding).toBe("Repayment capacity");
-    expect(outcome.credit).toEqual({ score: 760, band: "750 and above, excellent", foirCap: 0.65 });
-    /* EMI rounded loan par banti hai, isliye 0.65 ke bilkul barabar nahi. */
-    expect(outcome.foir.used).toBeCloseTo(0.65, 3);
+    expect(outcome.credit).toEqual({ score: 760, band: "750 and above, excellent", foirCap: 0.7 });
+    /* EMI rounded loan par banti hai, isliye 0.7 ke bilkul barabar nahi. */
+    expect(outcome.foir.used).toBeCloseTo(0.7, 3);
+  });
+
+  it.each([650, 700, 750])("uses 70%% FOIR for eligible score %i", (creditScore) => {
+    const { outcome } = run(personalBody({ creditScore }));
+    expect(outcome.credit.foirCap).toBe(0.7);
+  });
+
+  it("keeps the personal-loan estimate to whole rupees without exceeding EMI capacity", () => {
+    const { outcome } = run(personalBody({ monthlyIncome: 16000, existingEmi: 0 }));
+    expect(outcome.headline).toBe(503496);
+    expect(outcome.monthly).toBe(11200);
+    expect(outcome.foir.used).toBeLessThanOrEqual(0.7);
   });
 
   it("tells the exact point when the score is below 650", () => {
@@ -69,7 +88,7 @@ describe("personal loan eligibility (website parity)", () => {
 
   it("refuses when the limit is below the ₹50,000 minimum", () => {
     const { reasonCode, outcome } = run(
-      personalBody({ monthlyIncome: 2000, existingEmi: 0, creditScore: 700 }),
+      personalBody({ monthlyIncome: 1000, existingEmi: 0, creditScore: 700 }),
     );
     expect(reasonCode).toBe("BELOW_MIN_LOAN");
     expect(outcome.headline).toBe(0);
@@ -96,6 +115,60 @@ describe("personal loan eligibility (website parity)", () => {
     expect(input.product.key).toBe("personal");
     expect(input.legacyCode).toBe("personal_loan");
     expect(input.applicant.age).toBe(30);
+  });
+});
+
+describe("business loan eligibility", () => {
+  it("uses 70% FOIR for every eligible credit-score band", () => {
+    for (const creditScore of [650, 700, 750]) {
+      const { outcome } = run(businessBody({ creditScore }));
+      expect(outcome.credit.foirCap).toBe(0.7);
+    }
+  });
+
+  it("calculates repayment capacity at the business-loan rate and tenure", () => {
+    const { outcome } = run(businessBody({ monthlyIncome: 80000, existingEmi: 0 }));
+    expect(outcome.eligible).toBe(true);
+    expect(outcome.roi).toBe(14);
+    expect(outcome.months).toBe(60);
+    expect(outcome.credit.foirCap).toBe(0.7);
+  });
+});
+
+describe("shared FOIR policy", () => {
+  it.each([
+    ["home", { propertyValue: 5000000 }],
+    ["lap", { propertyValue: 5000000 }],
+    ["vehicleLoan", { vehiclePrice: 3000000, vehicleFoir: 50 }],
+  ])("uses 70% FOIR for %s across eligible score bands", (product, fields) => {
+    for (const creditScore of [650, 700, 750]) {
+      const { outcome } = run(personalBody({ product, ...fields, creditScore }));
+      expect(outcome.credit.foirCap).toBe(0.7);
+    }
+  });
+
+  it("uses fixed 70% FOIR for commercial purchase even when an old override is sent", () => {
+    const { outcome } = run(
+      personalBody({
+        product: "commercialPurchase",
+        propertyValue: 20000000,
+        monthlyIncome: 100000,
+        commercialFoir: 50,
+      }),
+    );
+    expect(outcome.caps).toContainEqual(
+      expect.objectContaining({ key: "foir", label: "Repayment capacity at 70% FOIR" }),
+    );
+  });
+
+  it.each([
+    ["education loan", { product: "educationLoan", eduFees: 10000000 }],
+    ["gold loan", { product: "goldLoan", goldGrams: 1000, goldRate: 7000 }],
+    ["loan against shares", { product: "loanAgainstShares", shareValue: 10000000 }],
+  ])("keeps the 70% FOIR limit for %s", (_label, fields) => {
+    const { outcome } = run(personalBody({ ...fields, monthlyIncome: 80000, existingEmi: 0 }));
+    expect(outcome.eligible).toBe(true);
+    expect(outcome.foir.used).toBeCloseTo(0.7, 2);
   });
 });
 
