@@ -51,7 +51,6 @@ const toCheckView = (doc) => {
     email: item.email || "",
     dateOfBirth: item.dateOfBirth || null,
     age: item.age !== undefined && item.age !== null ? item.age : null,
-    country: item.country || "",
     occupation: item.occupation || "",
 
     product: item.productCode || "",
@@ -118,7 +117,11 @@ const createEligibilityCheck = async (body = {}, productKey) => {
     return { check: toCheckView(duplicate), duplicate: true };
   }
 
-  const foirCap = outcome.credit ? outcome.credit.foirCap : null;
+  const foirCap = outcome.credit
+    ? outcome.credit.foirCap
+    : outcome.foir && input.product.family !== "lrd"
+      ? FOIR_CAP
+      : null;
   const monthlyCap = outcome.foir ? Math.round(outcome.foir.income * (foirCap || FOIR_CAP)) : 0;
 
   const created = await EligibilityCheck.create({
@@ -129,7 +132,6 @@ const createEligibilityCheck = async (body = {}, productKey) => {
     email: input.applicant.email,
     dateOfBirth: input.applicant.dateOfBirth,
     age: input.applicant.age,
-    country: input.applicant.country,
     occupation: input.inputs.occupation,
 
     productCode: input.legacyCode,
