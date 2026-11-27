@@ -74,7 +74,7 @@ const reserveLoanApplicationSlot = async (userId, now = new Date()) => {
         },
       },
     ],
-    { new: true, projection: { _id: 1 }, timestamps: false, updatePipeline: true }
+    { returnDocument: "after", projection: { _id: 1 }, timestamps: false, updatePipeline: true }
   );
 
   if (updatedUser) return token;
