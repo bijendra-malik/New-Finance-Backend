@@ -1,8 +1,8 @@
 /*
 Eligibility calculator — engine + input validation tests.
 
-Pure functions only (no DB): personal loan ke saare rejection points, ek
-eligible case ke exact numbers, aur flat body validation.
+Pure functions only (no DB): personal loan ke exact numbers, saare rejection
+points, ek hi 70% FOIR policy, flat body validation aur route wiring.
 */
 
 const { normalizeInput, productSlug } = require("../src/modules/eligibility/eligibility.input");
@@ -22,15 +22,8 @@ const personalBody = (overrides = {}) => ({
   ...overrides,
 });
 
-const businessBody = (overrides = {}) => ({
-  ...personalBody(),
-  product: "business",
-  occupation: "Self Employed - Business",
-  ...overrides,
-});
-
-const run = (body) => {
-  const input = normalizeInput(body);
+const run = (body, pathProduct) => {
+  const input = normalizeInput(body, pathProduct);
   const result = calculateEligibility({ product: input.product, inputs: input.inputs });
   return { input, ...result };
 };
@@ -52,16 +45,22 @@ describe("personal loan eligibility (website parity)", () => {
     expect(outcome.foir.used).toBeCloseTo(0.7, 3);
   });
 
-  it.each([650, 700, 750])("uses 70%% FOIR for eligible score %i", (creditScore) => {
-    const { outcome } = run(personalBody({ creditScore }));
-    expect(outcome.credit.foirCap).toBe(0.7);
-  });
-
-  it("keeps the personal-loan estimate to whole rupees without exceeding EMI capacity", () => {
+  it("keeps the estimate to whole rupees without exceeding EMI capacity", () => {
     const { outcome } = run(personalBody({ monthlyIncome: 16000, existingEmi: 0 }));
     expect(outcome.headline).toBe(503496);
     expect(outcome.monthly).toBe(11200);
     expect(outcome.foir.used).toBeLessThanOrEqual(0.7);
+  });
+});
+
+describe("personal loan rejection points", () => {
+  it.each([
+    ["the score is below 650", { creditScore: 620 }, "CREDIT_SCORE_LOW"],
+    ["existing EMIs eat the whole income", { monthlyIncome: 20000, existingEmi: 19000, creditScore: 700 }, "NO_EMI_HEADROOM"],
+    ["the limit is below the ₹50,000 minimum", { monthlyIncome: 1000, existingEmi: 0, creditScore: 700 }, "BELOW_MIN_LOAN"],
+    ["no tenure is left before retirement", { dob: "1966-01-15" }, "AGE_TENURE_OVER"],
+  ])("refuses when %s", (_label, overrides, reasonCode) => {
+    expect(run(personalBody(overrides)).reasonCode).toBe(reasonCode);
   });
 
   it("tells the exact point when the score is below 650", () => {
@@ -79,72 +78,36 @@ describe("personal loan eligibility (website parity)", () => {
     expect(() => run(personalBody({ creditScore: "" }))).toThrow("Enter your credit score");
   });
 
-  it("refuses when existing EMIs eat the whole income", () => {
-    const { reasonCode } = run(
-      personalBody({ monthlyIncome: 20000, existingEmi: 19000, creditScore: 700 }),
-    );
-    expect(reasonCode).toBe("NO_EMI_HEADROOM");
-  });
-
-  it("refuses when the limit is below the ₹50,000 minimum", () => {
-    const { reasonCode, outcome } = run(
-      personalBody({ monthlyIncome: 1000, existingEmi: 0, creditScore: 700 }),
-    );
-    expect(reasonCode).toBe("BELOW_MIN_LOAN");
-    expect(outcome.headline).toBe(0);
-  });
-
-  it("refuses when no tenure is left before retirement", () => {
-    const { reasonCode } = run(personalBody({ dob: "1966-01-15", creditScore: 760 }));
-    expect(reasonCode).toBe("AGE_TENURE_OVER");
-  });
-
   it("caps the tenure so repayment ends by retirement", () => {
     const { outcome } = run(personalBody({ dob: "1967-01-15" }));
     expect(outcome.eligible).toBe(true);
     expect(outcome.months).toBe(12);
   });
-
-  it("treats the statutory personal-loan occupation as salaried", () => {
-    const { input } = run(personalBody({ occupation: "Business Owner" }));
-    expect(input.inputs.occupation).toBe("Salaried");
-  });
-
-  it("accepts the legacy product code and old date format", () => {
-    const { input } = run(personalBody({ product: "personal_loan", dob: "15/01/1996" }));
-    expect(input.product.key).toBe("personal");
-    expect(input.legacyCode).toBe("personal_loan");
-    expect(input.applicant.age).toBe(30);
-  });
 });
 
-describe("business loan eligibility", () => {
-  it("uses 70% FOIR for every eligible credit-score band", () => {
-    for (const creditScore of [650, 700, 750]) {
-      const { outcome } = run(businessBody({ creditScore }));
-      expect(outcome.credit.foirCap).toBe(0.7);
-    }
-  });
-
-  it("calculates repayment capacity at the business-loan rate and tenure", () => {
-    const { outcome } = run(businessBody({ monthlyIncome: 80000, existingEmi: 0 }));
-    expect(outcome.eligible).toBe(true);
-    expect(outcome.roi).toBe(14);
-    expect(outcome.months).toBe(60);
-    expect(outcome.credit.foirCap).toBe(0.7);
-  });
-});
-
-describe("shared FOIR policy", () => {
+describe("shared 70% FOIR policy", () => {
   it.each([
+    ["personal", {}],
+    ["business", {}],
     ["home", { propertyValue: 5000000 }],
     ["lap", { propertyValue: 5000000 }],
     ["vehicleLoan", { vehiclePrice: 3000000, vehicleFoir: 50 }],
-  ])("uses 70% FOIR for %s across eligible score bands", (product, fields) => {
+  ])("uses 70%% FOIR for %s across eligible score bands", (product, fields) => {
     for (const creditScore of [650, 700, 750]) {
       const { outcome } = run(personalBody({ product, ...fields, creditScore }));
       expect(outcome.credit.foirCap).toBe(0.7);
     }
+  });
+
+  /* Baaki family engines apna FOIR `foir.used` me report karte hain. */
+  it.each([
+    ["education loan", { product: "educationLoan", eduFees: 10000000 }],
+    ["gold loan", { product: "goldLoan", goldGrams: 1000, goldRate: 7000 }],
+    ["loan against shares", { product: "loanAgainstShares", shareValue: 10000000 }],
+  ])("keeps the 70%% FOIR limit for %s", (_label, fields) => {
+    const { outcome } = run(personalBody({ ...fields, monthlyIncome: 80000, existingEmi: 0 }));
+    expect(outcome.eligible).toBe(true);
+    expect(outcome.foir.used).toBeCloseTo(0.7, 2);
   });
 
   it("uses fixed 70% FOIR for commercial purchase even when an old override is sent", () => {
@@ -161,14 +124,34 @@ describe("shared FOIR policy", () => {
     );
   });
 
-  it.each([
-    ["education loan", { product: "educationLoan", eduFees: 10000000 }],
-    ["gold loan", { product: "goldLoan", goldGrams: 1000, goldRate: 7000 }],
-    ["loan against shares", { product: "loanAgainstShares", shareValue: 10000000 }],
-  ])("keeps the 70% FOIR limit for %s", (_label, fields) => {
-    const { outcome } = run(personalBody({ ...fields, monthlyIncome: 80000, existingEmi: 0 }));
+  it("prices a business loan at its own rate and tenure", () => {
+    const { outcome } = run(personalBody({ product: "business", occupation: "Self Employed - Business" }));
     expect(outcome.eligible).toBe(true);
-    expect(outcome.foir.used).toBeCloseTo(0.7, 2);
+    expect(outcome.roi).toBe(14);
+    expect(outcome.months).toBe(60);
+  });
+});
+
+describe("input normalization", () => {
+  it("treats the statutory personal-loan occupation as salaried", () => {
+    const { input } = run(personalBody({ occupation: "Business Owner" }));
+    expect(input.inputs.occupation).toBe("Salaried");
+  });
+
+  it("accepts the legacy product code and old date format", () => {
+    const { input } = run(personalBody({ product: "personal_loan", dob: "15/01/1996" }));
+    expect(input.product.key).toBe("personal");
+    expect(input.legacyCode).toBe("personal_loan");
+    expect(input.applicant.age).toBe(30);
+  });
+
+  it("takes the product from the route, not the body", () => {
+    const fromPath = run(personalBody({ product: undefined }), "personal");
+    expect(fromPath.input.product.key).toBe("personal");
+    expect(fromPath.input.legacyCode).toBe("personal_loan");
+
+    /* Body me koi doosra product bheja ho to bhi path hi chalta hai. */
+    expect(run(personalBody({ product: "goldLoan" }), "personal").input.product.key).toBe("personal");
   });
 });
 
@@ -212,17 +195,9 @@ describe("eligibility input validation", () => {
 
 describe("family engines", () => {
   it("values a gold loan on LTV slabs and the ₹10,000 floor", () => {
-    const input = normalizeInput({
-      product: "goldLoan",
-      dob: "1990-01-15",
-      goldGrams: 50,
-      goldRate: 7000,
-      creditScore: 760,
-      fullName: "Ravi Kumar",
-      mobile: "9876543210",
-      email: "ravi@example.com",
-      authorized: true,
-    });
+    const input = normalizeInput(
+      personalBody({ product: "goldLoan", dob: "1990-01-15", goldGrams: 50, goldRate: 7000 }),
+    );
     const { outcome, eligible } = calculateEligibility({ product: input.product, inputs: input.inputs });
 
     expect(eligible).toBe(true);
@@ -233,19 +208,17 @@ describe("family engines", () => {
   });
 
   it("prices LRD at 10.5% over the remaining lease", () => {
-    const input = normalizeInput({
-      product: "leaseRentalDiscounting",
-      dob: "1985-01-15",
-      lrdRent: 100000,
-      lrdLeaseYears: 5,
-      lrdPropertyValue: 10000000,
-      lrdLtv: 70,
-      creditScore: 780,
-      fullName: "Ravi Kumar",
-      mobile: "9876543210",
-      email: "ravi@example.com",
-      authorized: true,
-    });
+    const input = normalizeInput(
+      personalBody({
+        product: "leaseRentalDiscounting",
+        dob: "1985-01-15",
+        lrdRent: 100000,
+        lrdLeaseYears: 5,
+        lrdPropertyValue: 10000000,
+        lrdLtv: 70,
+        creditScore: 780,
+      }),
+    );
     const { outcome } = calculateEligibility({ product: input.product, inputs: input.inputs });
 
     expect(outcome.roi).toBe(10.5);
@@ -255,18 +228,16 @@ describe("family engines", () => {
   });
 
   it("charges full-draw interest on a working capital limit", () => {
-    const input = normalizeInput({
-      product: "workingCapital",
-      dob: "1985-01-15",
-      turnover: 20000000,
-      wcAssessment: 18.75,
-      wcMargin: 0,
-      creditScore: 780,
-      fullName: "Ravi Kumar",
-      mobile: "9876543210",
-      email: "ravi@example.com",
-      authorized: true,
-    });
+    const input = normalizeInput(
+      personalBody({
+        product: "workingCapital",
+        dob: "1985-01-15",
+        turnover: 20000000,
+        wcAssessment: 18.75,
+        wcMargin: 0,
+        creditScore: 780,
+      }),
+    );
     const { outcome } = calculateEligibility({ product: input.product, inputs: input.inputs });
 
     expect(outcome.headline).toBe(3750000);
@@ -275,8 +246,8 @@ describe("family engines", () => {
   });
 });
 
-describe("product-scoped calculator routes", () => {
-  it("uses the website page slug for every product", () => {
+describe("rate card and calculator routes", () => {
+  it("exposes the website slug for every product", () => {
     const slugs = rateCard().map((product) => productSlug(product.key));
 
     expect(slugs).toEqual([
@@ -297,15 +268,12 @@ describe("product-scoped calculator routes", () => {
     expect(new Set(slugs).size).toBe(13);
   });
 
-  it("takes the product from the route, not the body", () => {
-    const fromPath = normalizeInput(personalBody({ product: undefined }), "personal");
-    expect(fromPath.product.key).toBe("personal");
-    expect(fromPath.legacyCode).toBe("personal_loan");
-
-    /* Body me koi doosra product bheja ho to bhi path hi chalta hai. */
-    expect(normalizeInput(personalBody({ product: "goldLoan" }), "personal").product.key).toBe(
-      "personal",
-    );
+  it("lists the same 13 products as the website", () => {
+    const products = rateCard();
+    expect(products).toHaveLength(13);
+    expect(products[0]).toMatchObject({ key: "personal", label: "Personal Loan", roi: 12, tenureMonths: 60 });
+    expect(products.find((p) => p.key === "goldLoan")).toMatchObject({ minLoan: 10000, tenureMonths: 12 });
+    expect(products.find((p) => p.key === "loanAgainstShares")).toMatchObject({ minLoan: 25000 });
   });
 
   it("registers one POST route per product", () => {
@@ -316,15 +284,5 @@ describe("product-scoped calculator routes", () => {
     expect(paths).toContain("/calculator/personal-loan");
     expect(paths).toContain("/check");
     expect(paths.filter((path) => path.startsWith("/calculator/"))).toHaveLength(13);
-  });
-});
-
-describe("rate card", () => {
-  it("lists the same 13 products as the website", () => {
-    const products = rateCard();
-    expect(products).toHaveLength(13);
-    expect(products[0]).toMatchObject({ key: "personal", label: "Personal Loan", roi: 12, tenureMonths: 60 });
-    expect(products.find((p) => p.key === "goldLoan")).toMatchObject({ minLoan: 10000, tenureMonths: 12 });
-    expect(products.find((p) => p.key === "loanAgainstShares")).toMatchObject({ minLoan: 25000 });
   });
 });
