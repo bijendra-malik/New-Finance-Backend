@@ -30,7 +30,7 @@ const nextSequence = async (key) => {
   const doc = await Counter.findOneAndUpdate(
     { key },
     { $inc: { value: 1 } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    { returnDocument: "after", upsert: true, setDefaultsOnInsert: true }
   );
 
   return doc.value;
