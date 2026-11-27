@@ -36,7 +36,6 @@ const eligibilityCheckSchema = new mongoose.Schema(
     dateOfBirth: { type: Date, required: true },
     age: { type: Number, required: true, min: 0, max: 120 },
 
-    country: { type: String, default: "", trim: true, maxlength: 80 },
     occupation: { type: String, default: "", trim: true, maxlength: 80 },
 
     /* Admin/list compatibility: legacy code (personal_loan) + UI key (personal). */
