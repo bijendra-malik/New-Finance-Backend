@@ -58,10 +58,18 @@ const PRODUCT_ALIASES = {
   ...SHORT_CODES,
 };
 
-const INCOME_LABELS = {
-  Salaried: "Monthly income",
-  "Self-Employed": "Monthly net profit",
-  "Business Owner": "Monthly net profit",
+/* Sirf salaried se monthly income; self-employed (business / professional) aur business owner se yearly income. */
+const MONTHLY_INCOME_LABEL = "Monthly income";
+const YEARLY_INCOME_LABEL = "Yearly income";
+
+/*
+Website "Self-Employed" / "Business Owner" bhejti hai, jabki loan applications
+"Self Employed - Business" / "Self Employed - Professional" bhejte hain — dono
+yearly income wale hain. Spelling/case par nahi tikna.
+*/
+const takesYearlyIncome = (occupation) => {
+  const label = normalizeLabel(occupation);
+  return label.includes("self employed") || label.includes("business owner");
 };
 
 /* INITIAL_FORM ke wahi defaults jo calculation me use hote hain. */
@@ -201,11 +209,33 @@ const normalizeInput = (body = {}, productKey) => {
   const lapPropertyType = text(body.lapPropertyType) || FORM_DEFAULTS.lapPropertyType;
   const lapPropertyOther = text(body.lapPropertyOther);
 
+  /*
+  Business loan: saal ki income (yearly income) hi bhejni chahiye. Yearly mile
+  to /12 karke monthly assessed income banti hai; purana monthlyIncome sirf
+  backward compatibility ke liye chalta hai.
+  */
+  const isBusinessLoan = Boolean(product && product.key === "business");
+  /*
+  Business loan ke saath-saath self-employed / business owner occupation me bhi
+  saal ki income hi bheji jaati hai, isliye wahan bhi /12 karke monthly banate hain.
+  */
+  const usesYearlyIncome = isBusinessLoan || takesYearlyIncome(occupation);
+  const annualIncomeInput = num(
+    body.annualIncome ??
+      body.yearlyIncome ??
+      body.annualBusinessIncome ??
+      body.yearlyBusinessIncome,
+  );
+  const monthlyIncomeInput = num(body.monthlyIncome ?? body.income);
+  const monthlyIncome =
+    usesYearlyIncome && annualIncomeInput > 0 ? annualIncomeInput / 12 : monthlyIncomeInput;
+
   const inputs = {
     age: age === null ? 0 : age,
     occupation,
     creditScore: num(body.creditScore),
-    monthlyIncome: num(body.monthlyIncome ?? body.income),
+    monthlyIncome,
+    annualIncome: usesYearlyIncome ? annualIncomeInput || monthlyIncome * 12 : 0,
     existingEmi: num(body.existingEmi ?? body.emi),
     propertyValue: num(body.propertyValue),
     turnover: num(body.turnover),
@@ -272,8 +302,9 @@ const normalizeInput = (body = {}, productKey) => {
 
   if (family === "term") {
     if (inputs.monthlyIncome <= 0) {
-      const label = INCOME_LABELS[occupation] || INCOME_LABELS.Salaried;
-      errors.monthlyIncome = `Enter your ${label.toLowerCase()}`;
+      const label = usesYearlyIncome ? YEARLY_INCOME_LABEL : MONTHLY_INCOME_LABEL;
+      /* Yearly income wale occupation me error usi field par lagta hai. */
+      errors[usesYearlyIncome ? "annualIncome" : "monthlyIncome"] = `Enter your ${label.toLowerCase()}`;
     }
     if (product.asset && inputs[product.asset.field] <= 0) {
       errors[product.asset.field] = `Enter the ${product.asset.label.toLowerCase()}`;
