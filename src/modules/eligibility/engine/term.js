@@ -6,8 +6,8 @@ Term loans — Personal, Business, Home, LAP, Vehicle.
 const {
   MIN_HEADROOM,
   MIN_LOAN,
+  FOIR_CAP,
   RENTAL_HAIRCUT,
-  VEHICLE_FOIR,
   VEHICLE_LTV,
   assetLtvFor,
   creditPolicyFor,
@@ -29,18 +29,14 @@ const termEligibility = (input) => {
   if (refusal) return refusal;
 
   const credit = creditPolicyFor(input.creditScore || 0);
+  const isPersonal = product.key === "personal";
   const isVehicle = product.key === "vehicleLoan";
   const rental = Math.max(0, input.rentalIncome || 0) * RENTAL_HAIRCUT;
   const income = monthlyIncome + rental;
   const existing = existingEmi;
   const roi = input.roi && input.roi > 0 ? input.roi : product.roi;
 
-  const vehicleFoirPct = Math.min(80, Math.max(20, input.foirPct !== undefined ? input.foirPct : VEHICLE_FOIR * 100));
-  const foirCap = isVehicle
-    ? vehicleFoirPct / 100
-    : product.unsecured
-      ? credit.foirCap
-      : credit.securedFoirCap;
+  const foirCap = FOIR_CAP;
   const emiCap = income * foirCap;
   const headroom = Math.max(0, emiCap - existing);
   const months = Math.min(product.maxTenureMonths, input.tenureMonths, monthsToMaturity(age, product, occupation));
@@ -84,7 +80,8 @@ const termEligibility = (input) => {
   }
 
   const capacity = principalForEmi(headroom, roi, months);
-  const caps = [{ key: "foir", label: "Repayment capacity", value: roundTo(capacity, 1000) }];
+  const capacityAmount = isPersonal ? Math.floor(capacity) : roundTo(capacity, 1000);
+  const caps = [{ key: "foir", label: "Repayment capacity", value: capacityAmount }];
 
   if (product.asset && input.assetValue > 0) {
     const vehicleLtvPct = Math.min(100, Math.max(50, input.ltvPct !== undefined ? input.ltvPct : VEHICLE_LTV * 100));
