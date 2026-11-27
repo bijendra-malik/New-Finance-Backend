@@ -75,7 +75,6 @@ const evaluate = (product, inputs) => {
       monthlyIncome: inputs.monthlyIncome,
       existingEmi: inputs.existingEmi,
       coApplicantIncome: inputs.commercialCoApplicant,
-      foirPct: inputs.commercialFoir,
       ltvPct: inputs.commercialLtv,
       creditScore: inputs.creditScore,
     });
@@ -140,7 +139,6 @@ const evaluate = (product, inputs) => {
     tenureMonths: tenure,
     assetValue: asset ? inputs[asset.field] : 0,
     downPayment: inputs.vehicleDownPayment,
-    foirPct: inputs.vehicleFoir,
     ltvPct: inputs.vehicleLtv,
     assetType: product.key === "lap" ? inputs.lapAssetType : undefined,
     cityCategory: product.key === "lap" ? inputs.lapCity : undefined,
