@@ -59,6 +59,7 @@ const toCheckView = (doc) => {
     family: item.family || "",
 
     monthlyIncome: item.monthlyIncome || 0,
+    annualIncome: item.annualIncome || 0,
     existingEmi: item.existingEmi || 0,
     creditScore: item.creditScore || 0,
     netIncome: item.netIncome || 0,
@@ -140,6 +141,7 @@ const createEligibilityCheck = async (body = {}, productKey) => {
     family: input.product.family,
 
     monthlyIncome: input.inputs.monthlyIncome,
+    annualIncome: input.inputs.annualIncome || 0,
     existingEmi: input.inputs.existingEmi,
     creditScore: input.inputs.creditScore,
 
