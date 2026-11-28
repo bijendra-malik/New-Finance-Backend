@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const { EligibilityCheck } = require("./eligibility.model");
 const { rateCard, calculateEligibility } = require("./eligibility.rules");
 const { normalizeInput, resolveProduct, legacyCodeFor, text } = require("./eligibility.input");
-const { FOIR_CAP } = require("./engine/core");
+const { FOIR_CAP, PRODUCTS, RENTAL_HAIRCUT, assetLtvFor } = require("./engine/core");
 const { nextEligibilityCheckNo } = require("../../utils/sequence");
 
 /*
@@ -35,6 +35,41 @@ const notFound = (message = "Eligibility check not found") => {
   return error;
 };
 
+const LAP_PRODUCT = PRODUCTS.find((product) => product.key === "lap");
+
+/*
+LAP ka property block — admin drawer me "Property" section isi se banta hai.
+Values saved inputs snapshot se aati hain, isliye purane checks par bhi
+retroactively dikhti hain. Rent sirf tab count hota hai jab usage
+"Rented out" ho, aur 75% haircut ke saath (engine ka RENTAL_HAIRCUT).
+*/
+const propertyView = (item) => {
+  /* productKey purane records me khaali ho sakta hai — legacy code se bhi pehchano. */
+  if (item.productKey !== "lap" && item.productCode !== "loan_against_property") return null;
+
+  const inputs = item.inputs || {};
+  const marketValue = Number(inputs.propertyValue) || 0;
+  const usage = text(inputs.lapUsage) || "Self-occupied";
+  const monthlyRent = Number(inputs.lapRent) || 0;
+  const rentCounted = usage === "Rented out" ? Math.round(monthlyRent * RENTAL_HAIRCUT) : 0;
+  const ltv =
+    marketValue > 0
+      ? assetLtvFor(LAP_PRODUCT.asset, marketValue, text(inputs.lapAssetType), text(inputs.lapCity))
+      : 0;
+
+  return {
+    type: text(inputs.lapPropertyType),
+    typeOther: text(inputs.lapPropertyOther),
+    usage,
+    city: text(inputs.lapCity),
+    marketValue,
+    monthlyRent,
+    rentCounted,
+    existingLoan: Number(inputs.lapExistingLoan) || 0,
+    ltvPercent: ltv > 0 ? Math.round(ltv * 1000) / 10 : null,
+  };
+};
+
 /* Ek hi flat view — public response aur admin list dono isi shape par chalte hain. */
 const toCheckView = (doc) => {
   const item = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
@@ -60,11 +95,24 @@ const toCheckView = (doc) => {
 
     monthlyIncome: item.monthlyIncome || 0,
     annualIncome: item.annualIncome || 0,
+    property: propertyView(item),
     existingEmi: item.existingEmi || 0,
     creditScore: item.creditScore || 0,
     netIncome: item.netIncome || 0,
     foirPercent: item.foirPercent !== undefined && item.foirPercent !== null ? item.foirPercent : null,
     maxEmi: item.maxEmi || 0,
+    /*
+    FOIR income = engine ki counted income (LAP me rent ka 75% included).
+    maxEmi isi income par foir% lagakar banta hai, isliye admin drawer dono
+    dikhata hai — warna maxEmi income × FOIR se match nahi lagta.
+    */
+    foirIncome:
+      outcome.foir && Number.isFinite(outcome.foir.income) ? outcome.foir.income : 0,
+    /* Naye loan se pehle available EMI room = maxEmi − existing EMI. */
+    emiHeadroom:
+      outcome.foir && Number.isFinite(outcome.foir.income)
+        ? Math.max(0, (item.maxEmi || 0) - (item.existingEmi || 0))
+        : 0,
 
     roi: item.roi !== undefined && item.roi !== null ? item.roi : null,
     tenureMonths: item.tenureMonths !== undefined && item.tenureMonths !== null ? item.tenureMonths : null,
